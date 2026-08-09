@@ -15,7 +15,7 @@ class Settings(BaseSettings):
 
     LLM_PROVIDER: Literal["gemini", "ollama", "openai"] = "ollama"
 
-    GEMINI_API_KEY: str
+    GEMINI_API_KEY: str = ""  # Opcional cuando LLM_PROVIDER="ollama"
     GEMINI_MODEL: str = "gemini-2.0-flash"
 
     OPENAI_API_KEY: str = ""

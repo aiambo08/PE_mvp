@@ -94,7 +94,7 @@ class CompanyExtractionService:
         return {
             "domain": raw_data.company_domain,
             "status": "SUCCESS",
-            "profile": profile.model_dump(),
+            "profile": profile.model_dump(mode="json"),
             "scoring": scoring_results,
             "contact_email": raw_data.contact_email,
         }
