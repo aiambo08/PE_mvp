@@ -1,0 +1,24 @@
+# Web Scraping y HTTP
+playwright==1.42.0
+beautifulsoup4==4.12.3
+requests==2.31.0
+httpx==0.27.0
+
+# API y Servidor
+fastapi==0.110.0
+uvicorn[standard]==0.28.0
+pydantic==2.7.0
+pydantic-settings==2.2.1
+
+# AI, LLM & RAG Frameworks
+instructor==1.1.0
+openai==1.14.1
+llama-index==0.10.19
+llama-index-vector-stores-qdrant==0.1.5
+qdrant-client==1.8.0
+
+# Frontend & Data Processing
+streamlit==1.32.2
+pandas==2.2.1
+duckdb==0.10.0
+python-dotenv==1.0.1
