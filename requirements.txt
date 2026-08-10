@@ -9,6 +9,7 @@ fastapi==0.110.0
 uvicorn[standard]==0.28.0
 pydantic==2.7.0
 pydantic-settings==2.2.1
+python-multipart>=0.0.9
 
 # AI, LLM & RAG Frameworks
 instructor==1.1.0
@@ -22,3 +23,6 @@ streamlit==1.32.2
 pandas==2.2.1
 duckdb==0.10.0
 python-dotenv==1.0.1
+
+# Integraciones de LlamaIndex para Embeddings
+llama-index-embeddings-huggingface>=0.1.4

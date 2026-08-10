@@ -1,16 +1,21 @@
 import json
 import logging
+import shutil, os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 import aiofiles
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form,HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from app.config import settings
 from app.scrapers.company_scraper import CompanyWebScraper
 from app.services.extraction_service import CompanyExtractionService
+
+from app.models.rag_schemas import DocumentUploadResponse, RAGQueryRequest, RAGQueryResponse
+from app.services.document_service import DocumentIngestionService
+from app.services.rag_service import FinancialRAGService
 
 logger = logging.getLogger(__name__)
 
@@ -20,19 +25,39 @@ RESULTS_DIR = Path("data/processed_json")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # os.makedirs movido aquí: se ejecuta una sola vez al arrancar el servidor
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-    app.state.scraper = CompanyWebScraper(
-        headless=settings.SCRAPER_HEADLESS,
-        timeout=settings.SCRAPER_TIMEOUT,
-    )
+    Path("data/uploaded_pdfs").mkdir(parents=True, exist_ok=True)
+    Path("data/qdrant_db").mkdir(parents=True, exist_ok=True)
+
+    app.state.scraper = CompanyWebScraper(headless=settings.SCRAPER_HEADLESS, timeout=settings.SCRAPER_TIMEOUT)
     app.state.extractor = CompanyExtractionService()
-    logger.info("Services initialized.")
+
+    try:
+        logger.info("Inicializando DocumentIngestionService...")
+        ingestion = DocumentIngestionService()
+        app.state.ingestion = ingestion
+        logger.info("DocumentIngestionService OK. Qdrant tipo: %s", type(ingestion.qdrant_client).__name__)
+
+        logger.info("Inicializando FinancialRAGService...")
+        app.state.rag = FinancialRAGService(
+            qdrant_client=ingestion.qdrant_client,
+            embed_model=ingestion.embed_model
+        )
+        logger.info("FinancialRAGService OK. EmbedModel compartido: %s", ingestion.embed_model is app.state.rag.embed_model)
+    except Exception as exc:
+        logger.exception("ERROR CRITICO en lifespan al inicializar servicios RAG: %r", exc)
+        raise  # re-lanzar para que uvicorn registre el fallo de arranque
+
+    logger.info("Todos los servicios inicializados correctamente.")
     yield
     logger.info("Shutting down.")
 
 
-app = FastAPI(title="PE Deal Sourcing API", version="0.2.0", lifespan=lifespan)
+app = FastAPI(
+    title="PE Deal Sourcing & Due Diligence API",
+    version="0.3.0",
+    lifespan=lifespan,
+)
 
 
 class AnalyzeCompanyRequest(BaseModel):
@@ -71,3 +96,41 @@ async def analyze_company(request: AnalyzeCompanyRequest):
     except Exception as e:
         logger.exception("Unexpected error processing %s: %r", request.url, e)
         raise HTTPException(status_code=500, detail=f"Internal Server Error: {type(e).__name__}: {repr(e)}")
+
+
+@app.post("/api/v1/upload-document", response_model=DocumentUploadResponse)
+async def upload_document(file: UploadFile = File(...), company_domain: str = Form(...)):
+    if not file.filename.endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Solo se permiten archivos PDF.")
+
+    temp_dir = Path("data/uploaded_pdfs")
+    temp_dir.mkdir(parents=True, exist_ok=True)
+    temp_path = temp_dir / file.filename
+
+    content = await file.read()
+    async with aiofiles.open(temp_path, "wb") as buffer:
+        await buffer.write(content)
+
+    try:
+        ingestion_service: DocumentIngestionService = app.state.ingestion
+        result = await ingestion_service.process_and_index_pdf(
+            file_path=str(temp_path),
+            filename=file.filename,
+            company_domain=company_domain
+        )
+        return result
+    except AttributeError as e:
+        logger.exception("app.state.ingestion no disponible — lifespan falló al inicializar: %r", e)
+        raise HTTPException(status_code=503, detail=f"Servicio no inicializado: {repr(e)}")
+    except Exception as e:
+        logger.exception("Error en upload_document para '%s': %r", file.filename, e)
+        raise HTTPException(status_code=500, detail=f"{type(e).__name__}: {str(e)}")
+    finally:
+        temp_path.unlink(missing_ok=True)
+
+@app.post("/api/v1/query-rag", response_model=RAGQueryResponse)
+async def query_financial_rag(request: RAGQueryRequest):
+    rag_service: FinancialRAGService = app.state.rag
+    return await rag_service.query_due_diligence(request)
+
+    
