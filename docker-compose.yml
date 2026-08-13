@@ -26,6 +26,24 @@ services:
         depends_on:
             - qdrant
         restart: unless-stopped
+    
+    ui:
+        build: .
+        container_name: pe_streamlit_ui
+        command: streamlit run app/streamlit_app.py --server.port=8501 --server.address=0.0.0.0
+        ports:
+            - "8501:8501"
+        volumes:
+            - .:/app
+            - ./data:/app/data
+        environment:
+            - API_BASE_URL=http://api:8000/api/v1
+        env_file:
+            - .env
+        depends_on:
+            - api
+        restart: unless-stopped
+
 volumes:
     qdrant_storage:
         driver: local
