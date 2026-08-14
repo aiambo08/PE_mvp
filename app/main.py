@@ -60,6 +60,12 @@ app = FastAPI(
 )
 
 
+@app.get("/health")
+@app.get("/api/v1/health")
+async def health_check():
+    return {"status": "ok"}
+
+
 class AnalyzeCompanyRequest(BaseModel):
     url: str
 
@@ -71,8 +77,11 @@ async def analyze_company(request: AnalyzeCompanyRequest):
 
     try:
         raw_data = await scraper.scrape_company(request.url)
-        if raw_data.scrape_status != "SUCCESS":
-            raise HTTPException(status_code=400, detail=f"Scraping fallido: {raw_data.error_message}")
+        if raw_data.scrape_status == "FAILED":
+            raise HTTPException(
+                status_code=400,
+                detail=f"Scraping fallido: {raw_data.error_message or 'No se pudo acceder a la página web.'}"
+            )
 
         analysis_result = await extractor.extract_and_score(raw_data)
 

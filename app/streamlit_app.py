@@ -1,5 +1,10 @@
 import sys
+import asyncio
 from pathlib import Path
+
+# Configurar ProactorEventLoop en Windows antes de que Streamlit cree subprocesos de Playwright
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
 # Añadir la raíz del proyecto a sys.path para importar el módulo 'app' sin errores
 ROOT_DIR = Path(__file__).resolve().parent.parent
@@ -11,6 +16,8 @@ import pandas as pd
 import json, os
 
 from app.ui.api_client import APIClient
+from app.services.report_service import ICReportGenerator
+from app.ui.benchmarking_view import render_benchmarking_matrix
 
 # 1. Configuración de la página
 st.set_page_config(
@@ -128,10 +135,11 @@ target_domain_filter = st.sidebar.text_input("Filtrar Target (Dominio)", placeho
 
 st.title("Plataforma de Inteligencia y Due Diligence de Private Equity")
 
-tab1, tab2, tab3 = st.tabs([
+tab1, tab2, tab3, tab4 = st.tabs([
     "🔍 Deal Sourcing & Targets",
     "📄 Due Diligence RAG Copilot",
-    "📊 Repositorio de Empresas"
+    "📊 Repositorio de Empresas",
+    "📈 Benchmarking & Buy-and-Build"
 ])
 
 # --- TAB 1: DEAL SOURCING & TARGETS ---
@@ -163,7 +171,7 @@ with tab1:
                         st.markdown(
                             f"### Perfil Ejecutivo: **{profile['company_name']}**"
                         )
-                        st.markdown(f"*{profile['core_activity']}")
+                        st.markdown(f"*{profile['core_activity']}*")
                         st.markdown("---")
                     
                         m1, m2, m3, m4 = st.columns(4)
@@ -205,6 +213,27 @@ with tab1:
                             st.markdown("---")
                             st.caption("Desglose Cuantitativo de Puntos:")
                             st.json(scoring["score_breakdown"])
+
+                    # Botón de descarga de PDF Investment Teaser
+                    try:
+                        pdf_out_path = f"data/reports/{result['domain']}_one_pager.pdf"
+                        ICReportGenerator.generate_one_pager_pdf(
+                            domain=result['domain'],
+                            profile=profile,
+                            scoring=scoring,
+                            output_path=pdf_out_path
+                        )
+
+                        with open(pdf_out_path, "rb") as pdf_file:
+                            st.download_button(
+                                label="📄 Descargar Investment Teaser (PDF)",
+                                data=pdf_file,
+                                file_name=f"IC_Teaser_{result['domain']}.pdf",
+                                mime="application/pdf",
+                                use_container_width=True
+                            )
+                    except Exception as pdf_err:
+                        st.warning(f"No se pudo generar el PDF del Teaser: {str(pdf_err)}")
                 else:
                     st.error(f"Error en análisis: {result.get('error')}")
             except Exception as e:
@@ -342,3 +371,7 @@ with tab3:
             st.info("No hay empresas procesadas aún en el repositorio local.")
     else:
         st.info("Directorio `data/processed_json` no encontrado.")
+
+# --- TAB 4: BENCHMARKING BUY-AND-BUILD ---
+with tab4:
+    render_benchmarking_matrix(processed_dir="data/processed_json")

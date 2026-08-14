@@ -31,6 +31,7 @@ dependencies = [
     "streamlit==1.32.2",
     "uvicorn[standard]==0.28.0",
     "pdfplumber>=0.11.9",
+    "weasyprint>=69.0",
 ]
 
 [project.scripts]
