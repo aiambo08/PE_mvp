@@ -106,7 +106,7 @@ The platform ingests target company websites via a Windows-safe asynchronous `Pl
 
 The raw content is parsed by `Instructor` into strict `Pydantic v2` models (`StructuredCompanyProfile`) and evaluated by the **Deterministic PE Scoring Engine** across 4 institutional pillars:
 
-$$\text{PE Target Score} = S_{\text{Business Model}} + S_{\text{Scale}} + S_{\text{Digital Signals}} + S_{\text{M\&A Thesis}}$$
+$$\text{PE Target Score} = S_{\text{Business Model}} + S_{\text{Scale}} + S_{\text{Digital Signals}} + S_{\text{M&A Thesis}}$$
 
 * **Business Model (Max 30 pts):** Prioritizes B2B SaaS (30 pts), Industrial Manufacturing (28 pts), and Logistics/Distribution (25 pts) over B2C/Mixed models.
 * **Company Scale (Max 25 pts):** Optimal sweet spot for Mid-Market Buyouts: Medium Businesses (50–249 FTEs: 25 pts) and Small Businesses (10–49 FTEs: 18 pts).
@@ -131,6 +131,7 @@ $$\Delta \text{EBITDA} = \Delta \text{Ventas} - \Delta \text{Costes Variables}$$
 * **Covenant Headroom:** Quantifies the exact percentage buffer before breaching the Net Debt / EBITDA threshold.
 * **Debt Service Coverage Ratio (DSCR):** Computes $CFADS / \text{Annual Debt Service}$ across $-5\%$, $-10\%$, $-15\%$, and $-20\%$ demand shocks.
 * **Net Cash Resiliency:** Formally guards against division-by-zero anomalies in debt-free targets.
+
 
 ---
 
