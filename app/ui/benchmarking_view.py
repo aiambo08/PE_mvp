@@ -2,10 +2,11 @@ import json
 import os
 import pandas as pd
 import streamlit as st
+from typing import Optional, List, Dict, Any
 
 
 def format_tier_badge(tier_raw: str) -> str:
-    """Mapea los enumerados de Tier a badges con código de color."""
+    """Mapea los enumerados de Tier a badges con código de color institucional."""
     mapping = {
         "TIER_1_HIGH_PRIORITY": "🟢 Tier 1 (Alta Prioridad)",
         "TIER_2_QUALIFIED": "🟡 Tier 2 (Calificado)",
@@ -14,29 +15,35 @@ def format_tier_badge(tier_raw: str) -> str:
     return mapping.get(tier_raw, f"⚪ {tier_raw}")
 
 
-def render_benchmarking_matrix(processed_dir: str = "data/processed_json"):
+def render_benchmarking_matrix(
+    companies: Optional[List[Dict[str, Any]]] = None,
+    processed_dir: str = "data/processed_json"
+):
     """Renderiza la Matriz Comparativa Lado a Lado para estrategias Buy-and-Build."""
-    st.subheader("📊 Matriz Comparativa Buy-and-Build (Roll-Up Matrix)")
+    st.subheader("📊 Matriz Comparativa Buy-and-Build (Roll-Up Cockpit)")
     st.markdown(
-        "Selecciona Pymes analizadas para comparar sus métricas operativas, grado de digitalización y encaje de consolidación inorgánica."
+        "Selecciona targets analizados para comparar sus métricas operativas, señales de madurez digital y encaje de consolidación inorgánica."
     )
 
-    if not os.path.exists(processed_dir):
-        st.info("No existe el directorio de datos procesados.")
-        return
+    available_targets: Dict[str, Dict[str, Any]] = {}
 
-    # 1. Cargar targets disponibles en disco
-    files = [f for f in os.listdir(processed_dir) if f.endswith(".json")]
-    available_targets = {}
-
-    for file in files:
-        filepath = os.path.join(processed_dir, file)
-        with open(filepath, "r", encoding="utf-8") as f:
-            data = json.load(f)
+    # 1. Priorizar datos suministrados vía API o fallback a disco
+    if companies:
+        for data in companies:
             if data.get("status") == "SUCCESS":
-                domain = data["domain"]
-                name = data["profile"]["company_name"]
+                domain = data.get("domain", "N/A")
+                name = data.get("profile", {}).get("company_name", domain)
                 available_targets[f"{name} ({domain})"] = data
+    elif os.path.exists(processed_dir):
+        files = [f for f in os.listdir(processed_dir) if f.endswith(".json")]
+        for file in files:
+            filepath = os.path.join(processed_dir, file)
+            with open(filepath, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if data.get("status") == "SUCCESS":
+                    domain = data["domain"]
+                    name = data["profile"]["company_name"]
+                    available_targets[f"{name} ({domain})"] = data
 
     if len(available_targets) < 2:
         st.warning(
@@ -45,10 +52,11 @@ def render_benchmarking_matrix(processed_dir: str = "data/processed_json"):
         return
 
     # 2. Selector Múltiple (2 a 5 Pymes)
+    target_keys = list(available_targets.keys())
     selected_keys = st.multiselect(
-        "Selecciona los Targets a comparar:",
-        options=list(available_targets.keys()),
-        default=list(available_targets.keys())[:3],
+        "Selecciona los Targets a comparar en la Matriz:",
+        options=target_keys,
+        default=target_keys[:min(3, len(target_keys))],
         max_selections=5,
     )
 
@@ -71,7 +79,7 @@ def render_benchmarking_matrix(processed_dir: str = "data/processed_json"):
             "Portal Cliente / Intranet",
             "Tech Stack Moderno",
             "Señales de Contratación",
-            "Fortaleza Principal",
+            "Fortaleza Principal (IC)",
             "Riesgo Operativo Principal",
         ]
     }
@@ -85,7 +93,7 @@ def render_benchmarking_matrix(processed_dir: str = "data/processed_json"):
         col_header = f"🏢 {prof.get('company_name', 'N/A')}\n({target.get('domain', 'N/A')})"
         tier_val = sc.get("tier", sc.get("target_tier", "N/A"))
         bm_val = prof.get("business_model", "N/A").replace("_", " ").title()
-        scale_val = prof.get("estimated_scale", "N/A").title()
+        scale_val = prof.get("estimated_scale", "N/A").replace("_", " ").title()
 
         matrix_dict[col_header] = [
             f"{sc.get('total_score', 0)} / 100",
@@ -107,9 +115,7 @@ def render_benchmarking_matrix(processed_dir: str = "data/processed_json"):
             "✅ Sí" if ds.get("modern_tech_stack") else "❌ No",
             "✅ Sí" if ds.get("active_hiring_signals") else "❌ No",
             thesis.get("key_strengths", ["N/A"])[0] if thesis.get("key_strengths") else "N/A",
-            thesis.get("operational_risks", ["N/A"])[0]
-            if thesis.get("operational_risks")
-            else "N/A",
+            thesis.get("operational_risks", ["N/A"])[0] if thesis.get("operational_risks") else "N/A",
         ]
 
     # 4. Convertir a DataFrame y fijar índice
@@ -151,5 +157,5 @@ def render_benchmarking_matrix(processed_dir: str = "data/processed_json"):
 
     c1.metric("PE Score Promedio", f"{avg_score:.1f} / 100")
     c2.metric("Aptas para Buy & Build", f"{buy_build_count} de {len(selected_data)}")
-    c3.metric("Relevo Generacional (Familia)", f"{family_count} de {len(selected_data)}")
+    c3.metric("Relevo Generacional", f"{family_count} de {len(selected_data)}")
     c4.metric("Oportunidad Gap Digital", f"{digital_gap_count} de {len(selected_data)}")
