@@ -1,6 +1,7 @@
 import logging
 import instructor
 from openai import AsyncOpenAI
+from typing import Any, Tuple
 
 from app.config import settings
 from app.models.raw_schemas import RawCompanyData
@@ -14,21 +15,49 @@ _MAX_SUB_CHARS = 2_000
 _MAX_SUBPAGES = 3
 _MAX_TOTAL_CHARS = 16_000
 
+def _build_instructor_client() -> Tuple[Any, str]:
+    """Construye el cliente instructor según LLM_PROVIDER configurado."""
+    provider = settings.LLM_PROVIDER
+    if provider == "gemini":
+        if not settings.GEMINI_API_KEY:
+            raise ValueError("LLM_PROVIDER=gemini configurado pero falta GEMINI_API_KEY en .env")
+        raw_client = AsyncOpenAI(
+            base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+            api_key=settings.GEMINI_API_KEY,
+        )
+        return (
+            instructor.from_openai(raw_client, mode=instructor.Mode.JSON),
+            settings.GEMINI_MODEL,
+        )
+    elif provider == "openai":
+        if not settings.OPENAI_API_KEY:
+            raise ValueError("LLM_PROVIDER=openai configurado pero falta OPENAI_API_KEY en .env")
+        raw_client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+        return (
+            instructor.from_openai(raw_client, mode=instructor.Mode.TOOLS),
+            settings.OPENAI_MODEL,
+        )
+    else:  # Ollama por defecto
+        raw_client = AsyncOpenAI(
+            base_url=settings.OLLAMA_BASE_URL,
+            api_key="ollama",
+        )
+        return (
+            instructor.from_openai(raw_client, mode=instructor.Mode.JSON),
+            settings.LOCAL_LLM_MODEL,
+        )
+
 
 class CompanyExtractionService:
-    """Servicio de extracción LLM apuntando a Ollama local con instructor."""
+    """Servicio de extracción LLM multi-proveedor (Gemini, OpenAI, Ollama) con instructor."""
 
     def __init__(self) -> None:
-        # Mode.JSON es el correcto para el endpoint /v1/chat/completions de Ollama.
-        # JSON_SCHEMA requiere soporte nativo del backend que Ollama no tiene.
-        self.client = instructor.from_openai(
-            AsyncOpenAI(
-                base_url=settings.OLLAMA_BASE_URL,
-                api_key="ollama",  # Ignorado por Ollama, requerido por el SDK
-            ),
-            mode=instructor.Mode.JSON,
+        self.client, self.model = _build_instructor_client()
+        logger.info(
+            "CompanyExtractionService inicializado [Provider: %s, Model: %s]",
+            settings.LLM_PROVIDER,
+            self.model,
         )
-        self.model = settings.LOCAL_LLM_MODEL
 
     def _prepare_prompt_text(self, raw_data: RawCompanyData) -> str:
         """Construye el contexto con truncado defensivo para proteger la VRAM."""
@@ -67,27 +96,28 @@ class CompanyExtractionService:
                     {
                         "role": "system",
                         "content": (
-                            "Eres un analista de datos de M&A. "
-                            "Genera extracciones estrictamente en JSON válido siguiendo el schema indicado."
+                            "Eres un Director de Inversiones de Private Equity especializado en M&A. "
+                            "Analiza la información corporativa y extrae estrictamente el perfil estructurado "
+                            "conforme al esquema JSON."
                         ),
                     },
                     {
                         "role": "user",
                         "content": (
-                            f"Analiza el texto de la empresa '{raw_data.company_domain}' "
-                            f"y extrae la información requerida.\n\n"
-                            f"TEXTO DE LA EMPRESA:\n{context_text}"
+                            f"Analiza el texto de la empresa con dominio '{raw_data.company_domain}' "
+                            f"y elabora el perfil de inversión.\n\n"
+                            f"CONTENIDO EXTRAÍDO:\n{context_text}"
                         ),
                     },
                 ],
             )
-        except Exception:
+        except Exception as e:
             # logger.exception preserva el stack trace completo en los logs de Uvicorn
-            logger.exception("LLM extraction failed for %s", raw_data.company_domain)
+            logger.exception("Fallo en extracción LLM para el dominio %s: %r", raw_data.company_domain, e)
             return {
                 "domain": raw_data.company_domain,
                 "status": "EXTRACTION_ERROR",
-                "error": "LLM extraction failed — see server logs for details",
+                "error": f"Fallo LLM ({type(e).__name__}): verifique el servicio {settings.LLM_PROVIDER}",
             }
 
         scoring_results = PEScoringEngine.calculate_score(profile)
