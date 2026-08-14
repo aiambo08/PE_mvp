@@ -1,6 +1,6 @@
 import os
 import requests
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 import logging
 
 logger = logging.getLogger(__name__)
@@ -44,4 +44,30 @@ class APIClient:
         endpoint = f"{self.base_url}/query-rag"
         payload = {"query": query, "company_domain": company_domain, "top_k": top_k}
         response = requests.post(endpoint, json=payload, timeout=60)
+        return self._handle_response(response)
+
+    def list_companies(self) -> List[Dict[str, Any]]:
+        endpoint = f"{self.base_url}/companies"
+        response = requests.get(endpoint, timeout=15)
+        return self._handle_response(response)
+
+    def simulate_leverage(
+        self,
+        revenue: float,
+        ebitda: float,
+        net_debt: float,
+        max_covenant_ratio: float = 3.0,
+        fixed_cost_ratio: float = 0.60,
+        annual_debt_service: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        endpoint = f"{self.base_url}/simulate-leverage"
+        payload = {
+            "revenue": revenue,
+            "ebitda": ebitda,
+            "net_debt": net_debt,
+            "max_covenant_ratio": max_covenant_ratio,
+            "fixed_cost_ratio": fixed_cost_ratio,
+            "annual_debt_service": annual_debt_service,
+        }
+        response = requests.post(endpoint, json=payload, timeout=15)
         return self._handle_response(response)
