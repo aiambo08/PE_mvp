@@ -1,12 +1,13 @@
 import json
 import logging
 import shutil, os
+import re
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 import aiofiles
 from fastapi import FastAPI, UploadFile, File, Form,HTTPException
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 from pydantic import BaseModel
 
 from app.config import settings
@@ -14,8 +15,11 @@ from app.scrapers.company_scraper import CompanyWebScraper
 from app.services.extraction_service import CompanyExtractionService
 
 from app.models.rag_schemas import DocumentUploadResponse, RAGQueryRequest, RAGQueryResponse
+from app.models.financial_schemas import SensitivityMatrixResponse
 from app.services.document_service import DocumentIngestionService
 from app.services.rag_service import FinancialRAGService
+from app.services.financial_simulation_service import FinancialStressEngine
+
 
 logger = logging.getLogger(__name__)
 
@@ -65,9 +69,50 @@ app = FastAPI(
 async def health_check():
     return {"status": "ok"}
 
+@app.get("/api/v1/companies")
+async def list_analyzed_companies():
+    """Retorna la lista completa de empresas analizadas sin acoplamiento a disco en la UI."""
+    results = []
+    if RESULTS_DIR.exists():
+        for file in RESULTS_DIR.glob("*.json"):
+            try:
+                async with aiofiles.open(file, "r", encoding="utf-8") as f:
+                    content = await f.read()
+                    data = json.loads(content)
+                    if data.get("status") == "SUCCESS":
+                        results.append(data)
+            except Exception as e:
+                logger.warning("Error leyendo archivo de resultado '%s': %r", file.name, e)
+    return results
+
+
+class StressSimulationRequest(BaseModel):
+    revenue: float
+    ebitda: float
+    net_debt: float
+    max_covenant_ratio: float = 3.0
+    fixed_cost_ratio: float = 0.60
+    annual_debt_service: float | None = None
+
 
 class AnalyzeCompanyRequest(BaseModel):
     url: str
+
+@app.post("/api/v1/simulate-leverage", response_model=SensitivityMatrixResponse)
+async def simulate_leverage(req: StressSimulationRequest):
+    """Ejecuta el análisis de estrés de covenants financieros y solvencia LBO."""
+    try:
+        data = FinancialStressEngine.run_sensitivity_matrix(
+            revenue=req.revenue,
+            ebitda=req.ebitda,
+            net_debt=req.net_debt,
+            max_covenant_ratio=req.max_covenant_ratio,
+            fixed_cost_ratio=req.fixed_cost_ratio,
+            annual_debt_service=req.annual_debt_service,
+        )
+        return SensitivityMatrixResponse(**data)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @app.post("/api/v1/analyze-company")
