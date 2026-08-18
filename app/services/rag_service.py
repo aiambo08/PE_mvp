@@ -122,17 +122,21 @@ class FinancialRAGService:
             None, self.embed_model.get_query_embedding, request.query
         )
 
-        # 2. Filtro opcional por empresa objetivo
-        query_filter = None
-        if request.company_domain:
-            query_filter = qmodels.Filter(
-                must=[
-                    qmodels.FieldCondition(
-                        key="company_domain",
-                        match=qmodels.MatchValue(value=request.company_domain),
-                    )
-                ]
+        # 2. Filtro estricto por empresa objetivo (Aislamiento Multi-Target M&A)
+        if not request.company_domain or not request.company_domain.strip():
+            raise ValueError(
+                "Fallo de Seguridad / Auditoría: Debe especificarse un 'company_domain' "
+                "para aislar el Data Room y evitar fugas de información confidencial entre targets."
             )
+        target_domain = request.company_domain.strip().lower()
+        query_filter = qmodels.Filter(
+            must=[
+                qmodels.FieldCondition(
+                    key="company_domain",
+                    match=qmodels.MatchValue(value=target_domain),
+                )
+            ]
+        )
 
         # 3. Búsqueda vectorial (QdrantClient síncrono → thread pool)
         search_results = await loop.run_in_executor(
@@ -144,6 +148,18 @@ class FinancialRAGService:
                 limit=request.top_k,
             ),
         )
+
+        # 3.1 Verificación defensiva de documentos existentes para este target
+        if not search_results:
+            return RAGQueryResponse(
+                query=request.query,
+                answer=(
+                    f"INFORMACIÓN INSUFICIENTE: No se encontraron documentos indexados "
+                    f"en el Data Room para el target '{target_domain}'."
+                ),
+                citations=[],
+                retrieval_time_ms=round((time.time() - start_time) * 1000, 2),
+            )
 
         # 4. Construir citas y bloques de contexto con ventana completa
         citations: list[SourceCitation] = []
