@@ -19,6 +19,10 @@ from typing import Dict, Any, List
 from app.ui.api_client import APIClient
 from app.services.report_service import ICReportGenerator
 from app.ui.benchmarking_view import render_benchmarking_matrix
+from app.models.scoring_schemas import (
+    SCORING_CRITERIA, THESIS_PRESETS, InvestmentMandateConfig
+)
+from app.services.scoring_service import DynamicPEScoringEngine
 
 # ── 1. CONFIGURACIÓN DE PÁGINA ──────────────────────────────────────────────
 st.set_page_config(
@@ -48,18 +52,45 @@ CUSTOM_CSS = """
         --color-text-muted: #94A3B8;
     }
 
-    .stApp {
-        font-family: 'Inter', -apple-system, sans-serif;
-        background-color: var(--color-bg);
+    /* Forzar fondo global y texto */
+    html, body, [data-testid="stAppViewContainer"], .stApp {
+        font-family: 'Inter', -apple-system, sans-serif !important;
+        background-color: var(--color-bg) !important;
+        color: var(--color-text-main) !important;
+    }
+
+    /* Sidebar Forzada en Modo Oscuro */
+    section[data-testid="stSidebar"] {
+        background-color: var(--color-surface) !important;
+        border-right: 1px solid var(--color-border) !important;
+    }
+    section[data-testid="stSidebar"] * {
         color: var(--color-text-main);
+    }
+    section[data-testid="stSidebar"] .stMarkdown p,
+    section[data-testid="stSidebar"] label {
+        color: var(--color-text-main) !important;
     }
 
     /* Tipografía de Encabezados */
-    h1, h2, h3, h4 {
+    h1, h2, h3, h4, h5, h6 {
         font-family: 'Plus Jakarta Sans', sans-serif !important;
         font-weight: 700 !important;
         letter-spacing: -0.03em !important;
         color: var(--color-text-main) !important;
+    }
+
+    /* Inputs, Selects y Elementos de Formulario */
+    input, textarea, select, div[data-baseweb="select"] > div {
+        background-color: #0E131F !important;
+        color: #F8FAFC !important;
+        border-color: var(--color-border) !important;
+    }
+
+    /* Etiquetas de Inputs */
+    label, div[data-testid="stWidgetLabel"] p {
+        color: #CBD5E1 !important;
+        font-weight: 500 !important;
     }
 
     /* Tarjetas de Métricas de Alta Densidad */
@@ -116,7 +147,7 @@ CUSTOM_CSS = """
         font-weight: 600;
         padding: 8px 16px;
         border-radius: 6px 6px 0 0;
-        color: var(--color-text-muted);
+        color: var(--color-text-muted) !important;
     }
 
     .stTabs [aria-selected="true"] {
@@ -142,6 +173,13 @@ CUSTOM_CSS = """
         border-radius: 4px;
         border: 1px solid rgba(14, 165, 233, 0.3);
     }
+
+    /* Expander styling */
+    div[data-testid="stExpander"] {
+        border: 1px solid var(--color-border) !important;
+        border-radius: 8px !important;
+        background-color: rgba(14, 19, 31, 0.6) !important;
+    }
 </style>
 """
 
@@ -153,90 +191,10 @@ api_client = APIClient()
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 
-# Presets de Tesis de Inversión PE
-THESIS_PRESETS = {
-    "Equilibrado Mid-Market (Estándar)": {
-        "w_bm": 30, "w_scale": 25, "w_digital": 15, "w_thesis": 30,
-        "desc": "Enfoque general para Buyouts en Pymes industriales y B2B."
-    },
-    "Aggressive Buy-and-Build (Roll-Up)": {
-        "w_bm": 20, "w_scale": 20, "w_digital": 10, "w_thesis": 50,
-        "desc": "Prioriza consolidación inorgánica y relevo generacional."
-    },
-    "Asset-Light & Transformación Digital": {
-        "w_bm": 35, "w_scale": 15, "w_digital": 35, "w_thesis": 15,
-        "desc": "Foco en B2B SaaS, portales de clientes y modernización tech."
-    },
-    "Relevo Generacional / Fundador": {
-        "w_bm": 20, "w_scale": 25, "w_digital": 10, "w_thesis": 45,
-        "desc": "Foco en empresas familiares con oportunidad de sucesión."
-    }
-}
-
-# ── 4. FUNCIONES DE PONDERACIÓN DINÁMICA ──────────────────────────────────────
-def recalculate_dynamic_score(profile: Dict[str, Any], weights: Dict[str, float]) -> Dict[str, Any]:
-    """Recalcula el score PE en tiempo real según la tesis activa de la sesión."""
-    # 1. Modelo de Negocio
-    bm_scores = {
-        "B2B_SAAS": 1.0,
-        "INDUSTRIAL_MANUFACTURING": 0.933,
-        "LOGISTICS_DISTRIBUTION": 0.833,
-        "B2B_SERVICES": 0.733,
-        "B2B_PRODUCT": 0.600,
-        "MIXED": 0.400,
-        "B2C": 0.166,
-        "UNKNOWN": 0.0,
-    }
-    bm_val = profile.get("business_model", "UNKNOWN")
-    raw_bm = bm_scores.get(bm_val, 0.0)
-    score_bm = raw_bm * weights["w_bm"]
-
-    # 2. Escala
-    scale_scores = {
-        "MEDIUM_BUSINESS": 1.0,
-        "SMALL_BUSINESS": 0.72,
-        "LARGE_BUSINESS": 0.56,
-        "EXTRA_LARGE_BUSINESS": 0.40,
-        "MICRO_ENTERPRISE": 0.20,
-        "UNKNOWN": 0.0,
-    }
-    scale_val = profile.get("estimated_scale", "UNKNOWN")
-    raw_scale = scale_scores.get(scale_val, 0.0)
-    score_scale = raw_scale * weights["w_scale"]
-
-    # 3. Señales Digitales
-    ds = profile.get("digital_signals", {})
-    dig_pts = 0
-    if ds.get("has_client_portal"): dig_pts += 8
-    if ds.get("modern_tech_stack"): dig_pts += 7
-    if ds.get("has_e_commerce"): dig_pts += 5
-    if ds.get("active_hiring_signals"): dig_pts += 2
-    raw_digital = min(1.0, dig_pts / 15.0)
-    score_digital = raw_digital * weights["w_digital"]
-
-    # 4. Tesis M&A y Relevo
-    thesis = profile.get("investment_thesis", {})
-    th_pts = 0
-    if thesis.get("buy_and_build_potential"): th_pts += 15
-    if profile.get("is_family_owned_or_founder_led"): th_pts += 15
-    raw_thesis = min(1.0, th_pts / 30.0)
-    score_thesis = raw_thesis * weights["w_thesis"]
-
-    total = round(score_bm + score_scale + score_digital + score_thesis, 1)
-    total = max(0.0, min(100.0, total))
-
-    tier = "TIER_1_HIGH_PRIORITY" if total >= 75 else ("TIER_2_QUALIFIED" if total >= 50 else "TIER_3_DISCARD")
-
-    return {
-        "total_score": total,
-        "tier": tier,
-        "score_breakdown": {
-            "business_model": round(score_bm, 1),
-            "scale_score": round(score_scale, 1),
-            "digital_score": round(score_digital, 1),
-            "thesis_score": round(score_thesis, 1),
-        }
-    }
+# ── 4. FUNCIÓN DE SCORING DINÁMICA (thin wrapper sobre DynamicPEScoringEngine) ─
+def recalculate_dynamic_score(profile: Dict[str, Any], mandate: InvestmentMandateConfig) -> Dict[str, Any]:
+    """Recalcula el score PE usando el mandato de inversión activo en la sesión."""
+    return DynamicPEScoringEngine.calculate_from_mandate(profile, mandate)
 
 def format_tier_badge(tier_raw: str) -> str:
     if not tier_raw or tier_raw == "N/A":
@@ -279,38 +237,130 @@ with st.sidebar:
         st.error("🔴 API Backend Desconectado")
 
     st.markdown("### ⚙️ Tesis de Inversión y Scoring")
-    selected_preset_name = st.selectbox(
-        "Preset de Inversión:",
-        options=list(THESIS_PRESETS.keys()),
-        index=0
-    )
+
+    # ── Selector de Preset ────────────────────────────────────────────────────
+    preset_names = list(THESIS_PRESETS.keys())
+    selected_preset_name = st.selectbox("Preset de Inversión:", options=preset_names, index=0)
     preset_data = THESIS_PRESETS[selected_preset_name]
     st.caption(f"_{preset_data['desc']}_")
 
-    with st.expander("🛠️ Personalizar Ponderaciones (100% Max)", expanded=False):
-        w_bm = st.slider("Modelo de Negocio (%)", 0, 60, preset_data["w_bm"], 5)
-        w_scale = st.slider("Escala / Headcount (%)", 0, 60, preset_data["w_scale"], 5)
-        w_digital = st.slider("Madurez Digital (%)", 0, 60, preset_data["w_digital"], 5)
-        w_thesis = st.slider("Potencial M&A / Relevo (%)", 0, 60, preset_data["w_thesis"], 5)
+    # Detectar cambio de preset para resetear el estado de la sesión
+    if st.session_state.get("_last_preset") != selected_preset_name:
+        st.session_state["_last_preset"] = selected_preset_name
+        st.session_state["_active_criteria"] = list(preset_data["active_criteria"])
+        st.session_state["_weights"] = dict(preset_data["weights"])
+        st.session_state["_knockout_b2b"] = preset_data["knockout_b2b"]
+        st.session_state["_knockout_min_scale"] = preset_data["knockout_min_scale"]
 
-        total_w = w_bm + w_scale + w_digital + w_thesis
+    # Asegurar que el estado existe (primer render)
+    if "_active_criteria" not in st.session_state:
+        st.session_state["_active_criteria"] = list(preset_data["active_criteria"])
+        st.session_state["_weights"] = dict(preset_data["weights"])
+        st.session_state["_knockout_b2b"] = preset_data["knockout_b2b"]
+        st.session_state["_knockout_min_scale"] = preset_data["knockout_min_scale"]
+
+    with st.expander("🛠️ Personalizar Mandato de Inversión", expanded=False):
+
+        # ── Sección 1: Deal-Breakers (Filtros Eliminatorios) ──────────────────
+        st.markdown("**🚫 Filtros Eliminatorios (Deal-Breakers)**")
+        knockout_b2b = st.checkbox(
+            "Obligatorio B2B (descarta B2C y modelos desconocidos)",
+            value=st.session_state["_knockout_b2b"],
+            key="_knockout_b2b"
+        )
+
+        scale_options = {
+            "Sin mínimo de escala": None,
+            "Mínimo: Pequeña Empresa (10-49 FTEs)": "SMALL_BUSINESS",
+            "Mínimo: Mediana Empresa (50-249 FTEs)": "MEDIUM_BUSINESS",
+        }
+        current_min_scale = st.session_state["_knockout_min_scale"]
+        # Map stored value back to label for selectbox default
+        default_scale_label = next(
+            (lbl for lbl, val in scale_options.items() if val == current_min_scale),
+            "Sin mínimo de escala"
+        )
+        selected_scale_label = st.selectbox(
+            "Escala mínima requerida:",
+            options=list(scale_options.keys()),
+            index=list(scale_options.keys()).index(default_scale_label)
+        )
+        knockout_min_scale = scale_options[selected_scale_label]
+
+        st.markdown("---")
+
+        # ── Sección 2: Criterios Activos (Multiselect) ────────────────────────
+        st.markdown("**📐 Criterios de Scoring Activos**")
+        all_criteria_keys = list(SCORING_CRITERIA.keys())
+
+        def _criterion_label(k: str) -> str:
+            c = SCORING_CRITERIA[k]
+            badge = " 🆕" if c.get("phase") == "B" else ""
+            return c["icon"] + " " + c["label"] + badge
+
+        criteria_labels = {k: _criterion_label(k) for k in all_criteria_keys}
+
+        selected_labels = st.multiselect(
+            "Dimensiones a evaluar:",
+            options=[criteria_labels[k] for k in all_criteria_keys],
+            default=[criteria_labels[k] for k in st.session_state["_active_criteria"] if k in criteria_labels],
+            help="🆕 = Fase B: requiere re-análisis del target para datos precisos. Los pesos se normalizan al 100%."
+        )
+        # Reverse-map labels back to keys
+        label_to_key = {v: k for k, v in criteria_labels.items()}
+        active_criteria = [label_to_key[lbl] for lbl in selected_labels if lbl in label_to_key]
+
+        # Mostrar aviso si hay criterios Fase B seleccionados
+        phase_b_selected = [k for k in active_criteria if SCORING_CRITERIA.get(k, {}).get("phase") == "B"]
+        if phase_b_selected:
+            phase_b_labels = [SCORING_CRITERIA[k]["label"] for k in phase_b_selected]
+            st.info(
+                f"🆕 **Criterios Fase B activos:** {', '.join(phase_b_labels)}. "
+                "Los targets analizados antes de esta actualización mostrarán **0 pts** en estas dimensiones. "
+                "Re-analiza el target para obtener datos precisos."
+            )
+
+        if not active_criteria:
+            st.warning("⚠️ Selecciona al menos un criterio para calcular el scoring.")
+            active_criteria = list(preset_data["active_criteria"])  # fallback
+
+
+        st.markdown("---")
+
+        # ── Sección 3: Sliders Dinámicos (solo criterios activos) ─────────────
+        st.markdown("**⚖️ Ponderaciones (%)**")
+        raw_weights: Dict[str, float] = {}
+        for key in active_criteria:
+            crit = SCORING_CRITERIA[key]
+            default_w = st.session_state["_weights"].get(key, crit["default_weight"])
+            raw_weights[key] = st.slider(
+                f"{crit['icon']} {crit['label']} (%)",
+                min_value=0,
+                max_value=80,
+                value=int(default_w),
+                step=5,
+                help=crit["description"]
+            )
+
+        total_w = sum(raw_weights.values())
+        if total_w == 0:
+            st.warning("⚠️ Los pesos no pueden ser todos 0.")
+            total_w = 1
         if total_w != 100:
-            st.warning(f"⚠️ Suma actual: **{total_w}%** (Normalizado automáticamente a 100%)")
-            norm_factor = 100.0 / max(1.0, float(total_w))
-            active_weights = {
-                "w_bm": w_bm * norm_factor,
-                "w_scale": w_scale * norm_factor,
-                "w_digital": w_digital * norm_factor,
-                "w_thesis": w_thesis * norm_factor
-            }
+            st.warning(f"⚠️ Suma: **{total_w}%** → Normalizado a 100% automáticamente")
         else:
-            st.success("Ponderación balanceada al 100% ✅")
-            active_weights = {
-                "w_bm": float(w_bm),
-                "w_scale": float(w_scale),
-                "w_digital": float(w_digital),
-                "w_thesis": float(w_thesis)
-            }
+            st.success("Ponderación al 100% ✅")
+
+        # Persistir el estado de pesos para este preset
+        st.session_state["_weights"] = raw_weights
+
+    # ── Construir el mandato activo ───────────────────────────────────────────
+    active_mandate = InvestmentMandateConfig(
+        active_criteria=active_criteria,
+        weights=raw_weights,
+        knockout_b2b=knockout_b2b,
+        knockout_min_scale=knockout_min_scale,
+    )
 
     st.markdown("---")
     st.markdown("### 🎯 Filtros Rápidos")
@@ -353,8 +403,8 @@ with tab1:
 
                     profile = result["profile"]
                     
-                    # Calcular scoring dinámico con la tesis seleccionada
-                    dyn_scoring = recalculate_dynamic_score(profile, active_weights)
+                    # Calcular scoring dinámico con el mandato activo de la sesión
+                    dyn_scoring = recalculate_dynamic_score(profile, active_mandate)
 
                     # Tarjeta de Métricas Ejecutivas
                     with st.container(border=True):
@@ -390,7 +440,14 @@ with tab1:
                                 st.markdown(f"• **Riesgo:** {risk}")
                             st.markdown("---")
                             st.caption("Puntos por Pilar (Ponderación Dinámica Activa):")
-                            st.json(dyn_scoring["score_breakdown"])
+                            breakdown = dyn_scoring.get("score_breakdown", {})
+                            if dyn_scoring.get("knocked_out"):
+                                st.error(f"🚫 Knockout: {dyn_scoring.get('knockout_reason', 'Filtro eliminatorio activo')}")
+                            elif breakdown:
+                                for label, pts in breakdown.items():
+                                    st.metric(label, f"{pts:.1f} pts")
+                            else:
+                                st.info("Sin criterios activos para mostrar.")
 
                     # Botón de Descarga de Teaser PDF
                     try:
@@ -467,10 +524,11 @@ with tab2:
                 "revenue_shock_pct": "Caída Ventas",
                 "simulated_revenue_k": "Ventas (k€)",
                 "simulated_ebitda_k": "EBITDA (k€)",
+                "simulated_cfads_k": "CFADS (k€)",
                 "simulated_ebitda_margin_pct": "Margen EBITDA %",
                 "simulated_leverage_ratio": "Ratio DFN/EBITDA",
                 "covenant_headroom_pct": "Holgura Covenant %",
-                "dscr_ratio": "DSCR (x)",
+                "dscr_ratio": "DSCR CFADS (x)",
                 "covenant_breached": "Rotura Covenant"
             }, inplace=True)
 
@@ -479,12 +537,15 @@ with tab2:
                 lambda x: "🔴 INCUMPLIDO" if x else "🟢 Cumplido"
             )
 
-            st.markdown("### 📋 Resultados de la Matriz de Sensibilidad")
+            st.markdown("### 📋 Resultados de la Matriz de Sensibilidad LBO")
+            display_cols = [
+                "Caída Ventas", "Ventas (k€)", "EBITDA (k€)", "CFADS (k€)", "Margen EBITDA %",
+                "Ratio DFN/EBITDA", "Holgura Covenant %", "DSCR CFADS (x)", "Rotura Covenant"
+            ]
+            # Filtrar solo columnas existentes
+            available_cols = [c for c in display_cols if c in df_scenarios.columns]
             st.dataframe(
-                df_scenarios[[
-                    "Caída Ventas", "Ventas (k€)", "EBITDA (k€)", "Margen EBITDA %",
-                    "Ratio DFN/EBITDA", "Holgura Covenant %", "DSCR (x)", "Rotura Covenant"
-                ]],
+                df_scenarios[available_cols],
                 use_container_width=True,
                 hide_index=True
             )
@@ -588,7 +649,7 @@ with tab4:
         table_rows = []
         for item in companies_data:
             prof = item.get("profile", {})
-            dyn_sc = recalculate_dynamic_score(prof, active_weights)
+            dyn_sc = recalculate_dynamic_score(prof, active_mandate)
             
             domain = item.get("domain", "N/A")
             if target_domain_filter and target_domain_filter.lower() not in domain.lower():
