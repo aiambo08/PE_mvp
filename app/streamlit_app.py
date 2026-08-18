@@ -292,33 +292,17 @@ with st.sidebar:
         # ── Sección 2: Criterios Activos (Multiselect) ────────────────────────
         st.markdown("**📐 Criterios de Scoring Activos**")
         all_criteria_keys = list(SCORING_CRITERIA.keys())
-
-        def _criterion_label(k: str) -> str:
-            c = SCORING_CRITERIA[k]
-            badge = " 🆕" if c.get("phase") == "B" else ""
-            return c["icon"] + " " + c["label"] + badge
-
-        criteria_labels = {k: _criterion_label(k) for k in all_criteria_keys}
+        criteria_labels = {k: f"{SCORING_CRITERIA[k]['icon']} {SCORING_CRITERIA[k]['label']}" for k in all_criteria_keys}
 
         selected_labels = st.multiselect(
             "Dimensiones a evaluar:",
             options=[criteria_labels[k] for k in all_criteria_keys],
             default=[criteria_labels[k] for k in st.session_state["_active_criteria"] if k in criteria_labels],
-            help="🆕 = Fase B: requiere re-análisis del target para datos precisos. Los pesos se normalizan al 100%."
+            help="Selecciona las dimensiones a ponderar. Los pesos se normalizan automáticamente al 100%."
         )
         # Reverse-map labels back to keys
         label_to_key = {v: k for k, v in criteria_labels.items()}
         active_criteria = [label_to_key[lbl] for lbl in selected_labels if lbl in label_to_key]
-
-        # Mostrar aviso si hay criterios Fase B seleccionados
-        phase_b_selected = [k for k in active_criteria if SCORING_CRITERIA.get(k, {}).get("phase") == "B"]
-        if phase_b_selected:
-            phase_b_labels = [SCORING_CRITERIA[k]["label"] for k in phase_b_selected]
-            st.info(
-                f"🆕 **Criterios Fase B activos:** {', '.join(phase_b_labels)}. "
-                "Los targets analizados antes de esta actualización mostrarán **0 pts** en estas dimensiones. "
-                "Re-analiza el target para obtener datos precisos."
-            )
 
         if not active_criteria:
             st.warning("⚠️ Selecciona al menos un criterio para calcular el scoring.")

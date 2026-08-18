@@ -9,7 +9,7 @@
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://www.docker.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
 
-> **Institutional-grade Deal Sourcing & M&A Due Diligence Cockpit** engineered for Mid-Market Private Equity Funds, Investment Committees (IC), and Corporate Finance Advisors. Combines automated web entity ingestion, deterministic thesis scoring, financial covenant stress modeling, and table-aware confidential RAG document intelligence.
+> **Institutional-grade Deal Sourcing & M&A Due Diligence Cockpit** engineered for Mid-Market Private Equity Funds, Investment Committees (IC), and Corporate Finance Advisors. Combines automated web entity ingestion, modular thesis scoring with deal-breaker knockouts, LBO covenant & CFADS stress modeling, and table-aware confidential Data Room RAG document intelligence.
 
 ---
 
@@ -18,9 +18,9 @@
 1. [Executive Overview & Value Proposition](#-executive-overview--value-proposition)
 2. [End-to-End System Architecture](#-end-to-end-system-architecture)
 3. [Key Features Deep Dive](#-key-features-deep-dive)
-   - [Automated Deal Sourcing & Deterministic PE Scoring](#1-automated-deal-sourcing--deterministic-pe-scoring)
-   - [LBO Leverage & Debt Covenant Stress Engine](#2-lbo-leverage--debt-covenant-stress-engine)
-   - [Confidential Due Diligence RAG with Table Extraction](#3-confidential-due-diligence-rag-with-table-extraction)
+   - [Automated Deal Sourcing & Dynamic Mandate Scoring](#1-automated-deal-sourcing--dynamic-mandate-scoring)
+   - [LBO Leverage, CFADS & Debt Covenant Stress Engine](#2-lbo-leverage-cfads--debt-covenant-stress-engine)
+   - [Confidential Due Diligence RAG with Data Room Isolation](#3-confidential-due-diligence-rag-with-data-room-isolation)
    - [Buy-and-Build (Roll-Up) Benchmarking Matrix](#4-buy-and-build-roll-up-benchmarking-matrix)
    - [1-Click Investment Committee Teaser Generator](#5-1-click-investment-committee-teaser-generator)
 4. [Tech Stack & Engineering Foundations](#-tech-stack--engineering-foundations)
@@ -48,12 +48,13 @@ Traditional Mid-Market Private Equity origination and preliminary due diligence 
 ├──────────────────────────┬──────────────────────────────┬────────────────────────────────┤
 │ Feature                  │ Standard AI Prototypes       │ PE Deal Sourcing Platform      │
 ├──────────────────────────┼──────────────────────────────┼────────────────────────────────┤
-│ Target Scoring           │ LLM hallucinated scores (0-10)│ Deterministic Rule Engine (0-100)│
-│ Financial RAG            │ Plain text chunking (breaks  │ Table-aware PDF parsing        │
-│                          │ financial statement columns) │ (pdfplumber + Markdown pipes)  │
+│ Target Scoring           │ LLM hallucinated scores (0-10)│ Modular Engine (0-100) +       │
+│                          │                              │ Knockout Deal-Breakers         │
+│ Financial RAG            │ Plain text chunking (breaks  │ Table-aware PDF parsing +      │
+│                          │ financial statement columns) │ Strict Data Room Isolation     │
 │ Data Isolation           │ Third-party cloud endpoints  │ 100% On-Premise GPU Inference  │
 │ LBO Stress Modeling      │ Absent or naive fixed margin │ Degree of Operating Leverage   │
-│                          │                              │ (DOL) + DSCR + Covenant Headroom│
+│                          │                              │ (DOL) + CFADS + Covenant Buffer│
 │ Decoupling               │ Hardcoded monolithic logic   │ Clean REST API + Pydantic v2   │
 └──────────────────────────┴──────────────────────────────┴────────────────────────────────┘
 ```
@@ -72,7 +73,7 @@ flowchart TD
     subgraph STRUCTURAL_AI ["2. Inference & Schema Validation"]
         B1 --> C1[Instructor + Qwen2.5 7B / Gemini / OpenAI]
         C1 -->|Pydantic v2 Contract| D1[StructuredCompanyProfile]
-        D1 --> E1[PEScoringEngine Deterministic 0-100]
+        D1 --> E1[DynamicPEScoringEngine Modular 0-100]
     end
 
     subgraph VECTOR_ENGINE ["3. Vector Storage & Neural Retrieval"]
@@ -84,7 +85,7 @@ flowchart TD
 
     subgraph FINANCIAL_SIM ["4. Financial Modeling & Stress Engine"]
         J1[LBO Capital Structure Inputs] --> K1[FinancialStressEngine]
-        K1 -->|DOL + Variable Cost Absorption| L1[Sensitivity Scenarios -5% to -20%]
+        K1 -->|DOL + CFADS Calculation| L1[Sensitivity Scenarios -5% to -20%]
     end
 
     subgraph PRESENTATION ["5. Presentation & Deal Cockpit"]
@@ -92,7 +93,7 @@ flowchart TD
         I1 --> M1
         L1 --> M1
         M1 --> N1[Streamlit Deal Cockpit UI - Terminal Noir]
-        N1 --> O1[1-Click IC Teaser PDF Export]
+        M1 --> O1[Centralized IC Teaser PDF Export]
     end
 ```
 
@@ -100,48 +101,54 @@ flowchart TD
 
 ## 🚀 Key Features Deep Dive
 
-### 1. Automated Deal Sourcing & Deterministic PE Scoring
+### 1. Automated Deal Sourcing & Dynamic Mandate Scoring
 
-The platform ingests target company websites via a Windows-safe asynchronous `Playwright` crawler, extracting main navigation paths, value propositions, client portals, and contact emails.
+The platform ingests target company websites via a Windows-safe asynchronous `Playwright` crawler, extracting main navigation paths, value propositions, client portals, regulatory certifications, recurring revenue signals, and contact emails.
 
-The raw content is parsed by `Instructor` into strict `Pydantic v2` models (`StructuredCompanyProfile`) and evaluated by the **Deterministic PE Scoring Engine** across 4 institutional pillars:
+The raw content is parsed by `Instructor` into strict `Pydantic v2` models (`StructuredCompanyProfile`) and evaluated by the **Dynamic PE Scoring Engine** through a 4-step institutional process:
 
-$$\text{PE Target Score} = S_{\text{Business Model}} + S_{\text{Scale}} + S_{\text{Digital Signals}} + S_{\text{M and A Thesis}}$$
-
-* **Business Model (Max 30 pts):** Prioritizes B2B SaaS (30 pts), Industrial Manufacturing (28 pts), and Logistics/Distribution (25 pts) over B2C/Mixed models.
-* **Company Scale (Max 25 pts):** Optimal sweet spot for Mid-Market Buyouts: Medium Businesses (50–249 FTEs: 25 pts) and Small Businesses (10–49 FTEs: 18 pts).
-* **Digital Transformation Opportunity (Max 15 pts):** Detects Client Portals (+8), Modern Tech Stack (+7), direct eCommerce (+5), and active tech hiring (+2).
-* **M&A & Generational Succession Thesis (Max 30 pts):** Considers inorganic Buy-and-Build potential (+15) and founder-led / family-owned succession dynamics (+15).
-
-Targets are assigned institutional tiers:
-* 🟢 **Tier 1 (High Priority):** $\ge 75\text{ pts}$ (Prime candidate for Investment Committee review).
-* 🟡 **Tier 2 (Qualified):** $50 - 74\text{ pts}$ (Requires commercial qualification).
-* 🔴 **Tier 3 (Discard):** $< 50\text{ pts}$ (Non-strategic / Out of mandate).
+1. **Knockout Deal-Breakers:** Pre-screening filters (e.g., Mandatory B2B model, Minimum Headcount cutoff) that instantly assign `🔴 Tier 3 (Discard)` with `0.0 pts` to unqualified targets.
+2. **Dynamic Weight Normalization:** Sum of active criterion weights automatically normalized to 100%:
+   $$w_i = \frac{p_i}{\sum_{j \in \text{Selected}} p_j} \times 100$$
+3. **Modular Scoring Evaluation:** Evaluates active dimensions from the `SCORING_CRITERIA` catalog:
+   * **🏗️ Business Model (Commercial):** B2B SaaS (1.0), Industrial (0.93), Logistics (0.83), Services (0.73), Product (0.60), B2C (0.16).
+   * **📏 Scale / Headcount (Scale):** Medium Business (1.0), Small (0.72), Large (0.56), Micro (0.20).
+   * **💻 Digital Maturity (Value Creation):** Client portals, modern tech stack, eCommerce, tech hiring signals.
+   * **🤝 M&A & Succession (Governance):** Buy-and-Build platform fit and founder-led / family-owned dynamics.
+   * **💰 Recurring Revenue:** Subscriptions, long-term retainers, maintenance fees, and SaaS pricing.
+   * **🏅 Industry Certifications:** Regulatory moats, ISO 9001/27001, GMP, CE markings, and sector licenses.
+   * **🌍 Geographic Reach:** International (1.0), Iberian (0.75), National (0.50), Local (0.20).
+4. **Institutional Tiers:**
+   * 🟢 **Tier 1 (High Priority):** $\ge 75\text{ pts}$ (Prime candidate for Investment Committee review).
+   * 🟡 **Tier 2 (Qualified):** $50 - 74\text{ pts}$ (Requires commercial qualification).
+   * 🔴 **Tier 3 (Discard):** $< 50\text{ pts}$ (Non-strategic / Out of mandate / Knocked out).
 
 ---
 
-### 2. LBO Leverage & Debt Covenant Stress Engine
+### 2. LBO Leverage, CFADS & Debt Covenant Stress Engine
 
-A dedicated financial sensitivity engine (`FinancialStressEngine`) that models the impact of demand contraction on cash flows using the **Degree of Operating Leverage (DOL)**:
+A dedicated financial sensitivity engine (`FinancialStressEngine`) that models the impact of demand contraction on cash flows using the **Degree of Operating Leverage (DOL)** and **Cash Flow Available for Debt Service (CFADS)**:
 
-$$\Delta \text{Costes Variables} = \Delta \text{Ventas} \times \left(\frac{(\text{Ventas} - \text{EBITDA}) \times (1 - \text{Fixed Ratio})}{\text{Ventas}}\right)$$
+$$\Delta \text{Costes Variables} = \Delta \text{Ventas} \times \left(\frac{(\text{Ventas} - \text{EBITDA}) \times (1 - \text{Fixed Cost Ratio})}{\text{Ventas}}\right)$$
 
 $$\Delta \text{EBITDA} = \Delta \text{Ventas} - \Delta \text{Costes Variables}$$
 
-* **Covenant Headroom:** Quantifies the exact percentage buffer before breaching the Net Debt / EBITDA threshold.
-* **Debt Service Coverage Ratio (DSCR):** Computes $CFADS / \text{Annual Debt Service}$ across $-5\%$, $-10\%$, $-15\%$, and $-20\%$ demand shocks.
-* **Net Cash Resiliency:** Formally guards against division-by-zero anomalies in debt-free targets.
+$$\text{CFADS} = \text{Simulated EBITDA} - \text{Maintenance Capex (3\%)} - \text{Corporate Taxes (25\%) }$$
 
+* **Covenant Headroom:** Quantifies the exact percentage buffer before breaching the Net Debt / EBITDA threshold.
+* **Institutional DSCR:** Computes $\text{CFADS} / \text{Annual Debt Service}$ across $0\%$, $-5\%$, $-10\%$, $-15\%$, and $-20\%$ demand shocks.
+* **Capital Structure Modeling:** Integrates amortizable debt schedules (Term Loan A) and bullet interest margin structures.
 
 ---
 
-### 3. Confidential Due Diligence RAG with Table Extraction
+### 3. Confidential Due Diligence RAG with Data Room Isolation
 
 Standard RAG pipelines break financial statements because traditional chunkers slice multi-column PDF tables into illegible fragments.
 
 This platform implements a specialized ingestion and retrieval architecture:
 * **Table-Preserving Extraction:** `pdfplumber` isolates tabular coordinates and converts financial statements into clean Markdown pipes.
 * **Sentence-Window Retrieval:** `LlamaIndex`'s `SentenceWindowNodeParser` indexes focused sentence units while retaining a $\pm 5$ sentence context window for query-time synthesis.
+* **Data Room Isolation:** Every query strictly enforces `company_domain` payload filtering in Qdrant, preventing cross-target data leaks between confidential M&A memorandums.
 * **Strict Anti-Hallucination System Prompt:** Enforces strict provenance rules—if a figure is not explicitly recorded, the engine outputs *"INFORMACIÓN INSUFICIENTE EN LOS DOCUMENTOS ANALIZADOS"*, completely forbidding speculative calculations.
 * **Granular Source Attribution:** Every response provides the exact filename, page number, semantic similarity score, and verbatim excerpt.
 
@@ -157,7 +164,7 @@ A comparative side-by-side cockpit allowing investment directors to benchmark 2 
 
 ### 5. 1-Click Investment Committee Teaser Generator
 
-Generates executive, institutional-grade 1-page PDF Investment Teasers formatted specifically for Partner / Investment Committee distribution. Rendered cleanly using a headless HTML-to-PDF pipeline with complete visual score breakdowns.
+Generates executive, institutional-grade 1-page PDF Investment Teasers formatted specifically for Partner / Investment Committee distribution. Rendered cleanly using a headless HTML-to-PDF pipeline with complete visual score breakdowns and knockout notices.
 
 ---
 
@@ -199,7 +206,8 @@ pe-deal-sourcing-mvp/
 │   │   ├── financial_schemas.py # LBO sensitivity & EBITDA bridge schemas
 │   │   ├── rag_schemas.py       # RAG upload, query & source citation models
 │   │   ├── raw_schemas.py       # Raw scraped web page data structures
-│   │   └── structured_schemas.py# Structured SME profiles & scoring enums
+│   │   ├── scoring_schemas.py   # Modular Criteria Catalog & Mandate Config
+│   │   └── structured_schemas.py# Structured SME profiles & Phase B signals
 │   │
 │   ├── scrapers/                # Web Ingestion Layer
 │   │   └── company_scraper.py   # Threaded Playwright scraper with retry logic
@@ -207,10 +215,10 @@ pe-deal-sourcing-mvp/
 │   ├── services/                # Core Business Logic Layer
 │   │   ├── document_service.py  # PDF table parser & Qdrant ingestion pipeline
 │   │   ├── extraction_service.py# Multi-provider LLM extractor (Instructor)
-│   │   ├── financial_simulation_service.py # LBO DOL & Covenant sensitivity engine
+│   │   ├── financial_simulation_service.py # LBO DOL, CFADS & Covenant engine
 │   │   ├── rag_service.py       # Anti-hallucination RAG reasoning & source citations
 │   │   ├── report_service.py    # Executive PDF Teaser generator
-│   │   └── scoring_service.py   # Deterministic PE Scoring Engine (0-100)
+│   │   └── scoring_service.py   # Deterministic & Dynamic PE Scoring Engines
 │   │
 │   └── ui/                      # Frontend Components & API Client
 │       ├── api_client.py        # Decoupled REST client for FastAPI
@@ -329,9 +337,11 @@ docker-compose up --build
 | `GET` | `/api/v1/health` | Service health status | _None_ | `{"status": "ok"}` |
 | `POST`| `/api/v1/analyze-company`| Crawls website & extracts structured profile | `{"url": "https://company.com"}` | `JSONResponse` (Profile + Score) |
 | `GET` | `/api/v1/companies` | Lists all analyzed company profiles | _None_ | `List[Dict[str, Any]]` |
-| `POST`| `/api/v1/simulate-leverage`| Runs LBO sensitivity & covenant matrix | `StressSimulationRequest` | `SensitivityMatrixResponse` |
+| `POST`| `/api/v1/recalculate-scores`| Fast in-memory re-scoring across repository | `InvestmentMandateConfig` | `List[Dict[str, Any]]` |
+| `GET` | `/api/v1/companies/{domain}/teaser-pdf`| Centralized Investment Teaser PDF export | _None_ | `FileResponse (PDF)` |
+| `POST`| `/api/v1/simulate-leverage`| Runs LBO CFADS sensitivity & covenant matrix | `StressSimulationRequest` | `SensitivityMatrixResponse` |
 | `POST`| `/api/v1/upload-document`| Indexes CIM PDF into Qdrant vector store | `Multipart (file, company_domain)` | `DocumentUploadResponse` |
-| `POST`| `/api/v1/query-rag` | Queries indexed documents with citations | `RAGQueryRequest` | `RAGQueryResponse` |
+| `POST`| `/api/v1/query-rag` | Queries isolated Data Room with citations | `RAGQueryRequest` | `RAGQueryResponse` |
 
 ---
 
@@ -365,9 +375,10 @@ The architecture is tuned for consumer GPUs (8 GB VRAM) using strict memory boun
 - [x] **Phase 2:** Deterministic PE Target Scoring (0–100) & `Instructor` validation.
 - [x] **Phase 3:** Table-preserving Financial RAG with Sentence Window expansion & citations.
 - [x] **Phase 4:** Terminal Noir Deal Cockpit, LBO Stress Simulator & Buy-and-Build Matrix.
-- [ ] **Phase 5 (Next):** Automated EBITDA Quality of Earnings (QoE) add-back bridges extracted directly from PDF footnotes.
-- [ ] **Phase 6:** Multi-tenant workspace isolation with role-based access control (RBAC).
-- [ ] **Phase 7:** Automated connector integrations with S&P Capital IQ and PitchBook API feeds.
+- [x] **Phase 5:** Modular Criteria Catalog, Knockout Deal-Breakers & CFADS/DSCR Hardening.
+- [ ] **Phase 6 (Next):** Automated EBITDA Quality of Earnings (QoE) add-back bridges extracted directly from PDF footnotes.
+- [ ] **Phase 7:** Multi-tenant workspace isolation with role-based access control (RBAC).
+- [ ] **Phase 8:** Automated connector integrations with S&P Capital IQ and PitchBook API feeds.
 
 ---
 

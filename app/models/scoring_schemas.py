@@ -179,21 +179,19 @@ THESIS_PRESETS: Dict[str, dict] = {
         'knockout_min_scale': 'SMALL_BUSINESS',
         'desc': 'Foco en empresas familiares con oportunidad de sucesión.',
     },
-    'SaaS Growth & Recurrencia 🆕': {
+    'SaaS Growth & Recurrencia': {
         'active_criteria': ['w_bm', 'recurring_revenue', 'w_digital', 'geographic_reach'],
         'weights': {'w_bm': 35, 'recurring_revenue': 35, 'w_digital': 20, 'geographic_reach': 10},
         'knockout_b2b': True,
         'knockout_min_scale': None,
-        'desc': ('🆕 Fase B — Prioriza modelos SaaS o recurrentes con expansión geográfica. '
-                 'Requiere análisis nuevo para criterios de ingresos y huella geográfica.'),
+        'desc': 'Prioriza modelos SaaS y contratos de ingresos recurrentes con potencial de expansión geográfica.',
     },
-    'Defensibilidad Industrial 🆕': {
+    'Defensibilidad Industrial': {
         'active_criteria': ['w_bm', 'w_scale', 'industry_certs', 'recurring_revenue'],
         'weights': {'w_bm': 30, 'w_scale': 25, 'industry_certs': 25, 'recurring_revenue': 20},
         'knockout_b2b': False,
         'knockout_min_scale': 'SMALL_BUSINESS',
-        'desc': ('🆕 Fase B — Foco en industriales con barreras regulatorias (ISO, CE, GMP) '
-                 'e ingresos recurrentes. Requiere análisis nuevo para criterios de certificaciones.'),
+        'desc': 'Foco en pymes industriales con barreras regulatorias (ISO, CE, GMP) e ingresos recurrentes.',
     },
 }
 
