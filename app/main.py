@@ -4,9 +4,10 @@ import shutil, os
 import re
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import List
 
 import aiofiles
-from fastapi import FastAPI, UploadFile, File, Form,HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.responses import JSONResponse, FileResponse
 from pydantic import BaseModel
 
@@ -16,9 +17,13 @@ from app.services.extraction_service import CompanyExtractionService
 
 from app.models.rag_schemas import DocumentUploadResponse, RAGQueryRequest, RAGQueryResponse
 from app.models.financial_schemas import SensitivityMatrixResponse
+from app.models.scoring_schemas import InvestmentMandateConfig
 from app.services.document_service import DocumentIngestionService
 from app.services.rag_service import FinancialRAGService
 from app.services.financial_simulation_service import FinancialStressEngine
+from app.services.scoring_service import DynamicPEScoringEngine
+from app.services.report_service import ICReportGenerator
+
 
 
 logger = logging.getLogger(__name__)
@@ -83,6 +88,62 @@ async def list_analyzed_companies():
                         results.append(data)
             except Exception as e:
                 logger.warning("Error leyendo archivo de resultado '%s': %r", file.name, e)
+    return results
+
+@app.get("/api/v1/companies/{domain}/teaser-pdf")
+async def get_company_teaser_pdf(domain: str):
+    """
+    Genera y retorna el Investment Teaser en PDF de forma centralizada en el backend.
+    """
+    file_path = RESULTS_DIR / f"{domain}.json"
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Empresa target no encontrada.")
+
+    async with aiofiles.open(file_path, "r", encoding="utf-8") as f:
+        data = json.loads(await f.read())
+
+    pdf_output_path = f"data/reports/{domain}_one_pager.pdf"
+    
+    # Delegar la generación al servicio
+    ICReportGenerator.generate_one_pager_pdf(
+        domain=domain,
+        profile=data.get("profile", {}),
+        scoring=data.get("scoring", {}),
+        output_path=pdf_output_path
+    )
+
+    return FileResponse(
+        path=pdf_output_path,
+        filename=f"IC_Teaser_{domain}.pdf",
+        media_type="application/pdf"
+    )
+
+
+@app.post("/api/v1/recalculate-scores")
+async def recalculate_scores(mandate: InvestmentMandateConfig) -> List[dict]:
+    """
+    Recalcula el PE Target Score de todas las empresas almacenadas en disco
+    usando el mandato de inversión recibido. No requiere re-scraping ni llamada LLM.
+    Respuesta determinista en < 100 ms para repositorios de hasta ~500 empresas.
+    """
+    results = []
+    if RESULTS_DIR.exists():
+        for file in RESULTS_DIR.glob("*.json"):
+            try:
+                async with aiofiles.open(file, "r", encoding="utf-8") as f:
+                    content = await f.read()
+                data = json.loads(content)
+                if data.get("status") != "SUCCESS":
+                    continue
+                profile = data.get("profile", {})
+                dyn_scoring = DynamicPEScoringEngine.calculate_from_mandate(profile, mandate)
+                results.append({
+                    "domain": data.get("domain"),
+                    "profile": profile,
+                    "scoring": dyn_scoring,
+                })
+            except Exception as e:
+                logger.warning("Error recalculando score para '%s': %r", file.name, e)
     return results
 
 
