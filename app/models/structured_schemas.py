@@ -23,6 +23,15 @@ class CompanyScaleCategory(str, Enum):
     UNKNOWN = "UNKNOWN"
 
 
+class GeographicFootprint(str, Enum):
+    """Alcance geográfico estructurado de la empresa (Fase B)."""
+    LOCAL = "LOCAL"               # Solo ciudad / provincia
+    NATIONAL = "NATIONAL"         # Toda España
+    IBERIAN = "IBERIAN"           # España + Portugal
+    INTERNATIONAL = "INTERNATIONAL"  # Presencia fuera de Iberia
+    UNKNOWN = "UNKNOWN"
+
+
 class DigitalMaturitySignals(BaseModel):
     # use_enum_values: serializa Enums como strings en el JSON schema enviado al LLM
     model_config = ConfigDict(use_enum_values=True)
@@ -57,12 +66,38 @@ class StructuredCompanyProfile(BaseModel):
     estimated_scale: CompanyScaleCategory = Field(
         default=CompanyScaleCategory.UNKNOWN, description="Escala estimada de la empresa"
     )
-    geographic_reach: str = Field(description="Alcance: Nacional, Regional, Internacional")
+    # Campo legacy (str libre) — se conserva para retrocompatibilidad con JSONs en disco
+    geographic_reach: str = Field(default="", description="Alcance geográfico libre (legado). Ver geographic_footprint.")
     is_family_owned_or_founder_led: Optional[bool] = Field(
         default=None, description="¿Es pyme familiar o gestionada por el fundador?"
     )
     digital_signals: DigitalMaturitySignals = Field(description="Señales de madurez digital")
     investment_thesis: PEInvestmentThesis = Field(description="Tesis de inversión para el fondo")
+
+    # ── FASE B: Nuevas señales extraídas por el LLM ─────────────────────────
+    geographic_footprint: GeographicFootprint = Field(
+        default=GeographicFootprint.UNKNOWN,
+        description=(
+            "Alcance geográfico REAL de la empresa. "
+            "LOCAL=solo ciudad/provincia. NATIONAL=toda España. "
+            "IBERIAN=España+Portugal. INTERNATIONAL=presencia fuera de Iberia."
+        ),
+    )
+    has_recurring_revenue_signals: bool = Field(
+        default=False,
+        description=(
+            "¿La empresa menciona contratos recurrentes, suscripciones, cuotas mensuales, "
+            "retainers o modelo SaaS? Señales: 'tarifa mensual', 'contrato anual', "
+            "'abono', 'mantenimiento recurrente', 'suscripción'."
+        ),
+    )
+    has_industry_certifications: bool = Field(
+        default=False,
+        description=(
+            "¿Menciona certificaciones de calidad o sector? ISO 9001, ISO 27001, GMP, "
+            "marcado CE, licencias regulatorias, certificaciones de sostenibilidad o similares."
+        ),
+    )
 
     @field_validator("target_sectors")
     @classmethod
