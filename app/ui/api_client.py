@@ -51,6 +51,24 @@ class APIClient:
         response = requests.get(endpoint, timeout=15)
         return self._handle_response(response)
 
+    def recalculate_scores(self, mandate: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """
+        Recalcula el PE Target Score de todo el repositorio usando el mandato activo.
+        Llama a POST /api/v1/recalculate-scores sin requerir re-scraping.
+        """
+        endpoint = f"{self.base_url}/recalculate-scores"
+        response = requests.post(endpoint, json=mandate, timeout=15)
+        return self._handle_response(response)
+
+    def get_teaser_pdf(self, domain: str) -> bytes:
+        """
+        Obtiene el Investment Teaser PDF generado de forma centralizada en el backend.
+        """
+        endpoint = f"{self.base_url}/companies/{domain}/teaser-pdf"
+        response = requests.get(endpoint, timeout=30)
+        response.raise_for_status()
+        return response.content
+
     def simulate_leverage(
         self,
         revenue: float,
