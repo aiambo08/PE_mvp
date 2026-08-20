@@ -433,6 +433,29 @@ with tab1:
                             else:
                                 st.info("Sin criterios activos para mostrar.")
 
+                    # Canales de Contacto & Outreach Directo
+                    contact_email = result.get("contact_email")
+                    social_links = result.get("social_links", [])
+
+                    with st.container(border=True):
+                        st.markdown("#### 📬 Canales de Contacto & Outreach Directo")
+                        c_mail, c_social = st.columns(2)
+                        with c_mail:
+                            if contact_email:
+                                st.markdown(f"**📧 Email de Contacto:** [{contact_email}](mailto:{contact_email})")
+                            else:
+                                st.markdown("**📧 Email de Contacto:** *No detectado en la web*")
+                        with c_social:
+                            if social_links:
+                                st.markdown("**🌐 Presencia Digital:**")
+                                badges = []
+                                for s_link in social_links:
+                                    net_name = "LinkedIn" if "linkedin.com" in s_link else "Twitter/X" if any(x in s_link for x in ["twitter.com", "x.com"]) else "Instagram" if "instagram.com" in s_link else "Facebook" if "facebook.com" in s_link else "Web"
+                                    badges.append(f"[{net_name}]({s_link})")
+                                st.markdown(" • ".join(badges))
+                            else:
+                                st.markdown("**🌐 Presencia Digital:** *No se detectaron perfiles sociales*")
+
                     # Botón de Descarga de Teaser PDF
                     try:
                         pdf_out_path = f"data/reports/{result['domain']}_one_pager.pdf"
@@ -440,7 +463,9 @@ with tab1:
                             domain=result['domain'],
                             profile=profile,
                             scoring=dyn_scoring,
-                            output_path=pdf_out_path
+                            output_path=pdf_out_path,
+                            contact_email=contact_email,
+                            social_links=social_links,
                         )
                         if os.path.exists(pdf_out_path):
                             with open(pdf_out_path, "rb") as pdf_file:
@@ -656,6 +681,13 @@ with tab4:
             if dyn_sc["total_score"] < min_score_filter:
                 continue
 
+            email_val = item.get("contact_email") or "—"
+            s_links = item.get("social_links", [])
+            s_summary = ", ".join([
+                "LinkedIn" if "linkedin.com" in l else "X" if any(x in l for x in ["twitter.com", "x.com"]) else "IG" if "instagram.com" in l else "FB" if "facebook.com" in l else "Web"
+                for l in s_links
+            ]) if s_links else "—"
+
             table_rows.append({
                 "Dominio": domain,
                 "Empresa": prof.get("company_name", domain),
@@ -663,6 +695,8 @@ with tab4:
                 "Tier": format_tier_badge(dyn_sc["tier"]),
                 "Modelo": format_business_model(prof.get("business_model", "N/A")),
                 "Escala": format_estimated_scale(prof.get("estimated_scale", "N/A")),
+                "Email Contacto": email_val,
+                "Redes": s_summary,
                 "Buy & Build": "🟢 Sí" if prof.get("investment_thesis", {}).get("buy_and_build_potential") else "⚪ No",
                 "Relevo Gen.": "🟢 Sí" if prof.get("is_family_owned_or_founder_led") else "⚪ No",
             })
@@ -685,6 +719,8 @@ with tab4:
                     ),
                     "Dominio": st.column_config.TextColumn("Dominio Web"),
                     "Tier": st.column_config.TextColumn("Tier de Prioridad"),
+                    "Email Contacto": st.column_config.TextColumn("Email Outreach"),
+                    "Redes": st.column_config.TextColumn("Presencia Digital"),
                 }
             )
         else:

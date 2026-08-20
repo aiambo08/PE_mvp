@@ -109,7 +109,9 @@ async def get_company_teaser_pdf(domain: str):
         domain=domain,
         profile=data.get("profile", {}),
         scoring=data.get("scoring", {}),
-        output_path=pdf_output_path
+        output_path=pdf_output_path,
+        contact_email=data.get("contact_email"),
+        social_links=data.get("social_links", []),
     )
 
     return FileResponse(
@@ -141,6 +143,8 @@ async def recalculate_scores(mandate: InvestmentMandateConfig) -> List[dict]:
                     "domain": data.get("domain"),
                     "profile": profile,
                     "scoring": dyn_scoring,
+                    "contact_email": data.get("contact_email"),
+                    "social_links": data.get("social_links", []),
                 })
             except Exception as e:
                 logger.warning("Error recalculando score para '%s': %r", file.name, e)

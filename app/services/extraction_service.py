@@ -127,4 +127,5 @@ class CompanyExtractionService:
             "profile": profile.model_dump(mode="json"),
             "scoring": scoring_results,
             "contact_email": raw_data.contact_email,
+            "social_links": raw_data.social_links,
         }
