@@ -537,37 +537,51 @@ with tab2:
 
 # ── TAB 3: DUE DILIGENCE RAG COPILOT ─────────────────────────────────────────
 with tab3:
-    st.subheader("Copiloto de Due Diligence Financiera (RAG Anti-Alucinación)")
+    st.subheader("Copiloto de Due Diligence Financiera (Data Room RAG)")
     col_upload, col_chat = st.columns([1, 2])
+
+    if "indexed_targets" not in st.session_state:
+        st.session_state.indexed_targets = ["logistics-veloz.com"]
 
     with col_upload:
         with st.container(border=True):
             st.markdown("### 📥 Ingesta de Documentos")
+            
             upload_domain = st.text_input(
                 "Dominio Target Asociado:",
-                value=target_domain_filter if target_domain_filter else ""
+                value=target_domain_filter if target_domain_filter else "logistics-veloz.com",
+                help="Dominio o identificador para aislar el Data Room de este target."
             )
+            
             uploaded_file = st.file_uploader(
                 "Cargar Memorandum (CIM / Auditoría PDF):",
                 type=["pdf"]
             )
 
             if st.button("📤 Indexar en Qdrant Vector DB", use_container_width=True):
-                if uploaded_file and upload_domain:
-                    with st.spinner("Extrayendo tablas estructuradas en Markdown y vectorizando..."):
+                if uploaded_file:
+                    target_to_use = upload_domain.strip().lower() if upload_domain else "global"
+                    with st.spinner("Extrayendo balances estructurados y vectorizando..."):
                         try:
                             res = api_client.upload_document(
-                                company_domain=upload_domain,
+                                company_domain=target_to_use,
                                 file_bytes=uploaded_file.getvalue(),
                                 filename=uploaded_file.name,
                             )
+                            if target_to_use not in st.session_state.indexed_targets:
+                                st.session_state.indexed_targets.append(target_to_use)
                             st.success(
-                                f"Indexado correctamente: **{res['chunks_indexed']} chunks** ({res['total_pages']} págs)."
+                                f"✅ Indexado: **{res['chunks_indexed']} chunks** ({res['total_pages']} págs) para `{target_to_use}`."
                             )
                         except Exception as e:
                             st.error(f"Error en carga: {str(e)}")
                 else:
-                    st.warning("Indica el dominio e introduce un archivo PDF.")
+                    st.warning("Selecciona un archivo PDF para indexar.")
+
+            st.markdown("---")
+            if st.button("🗑️ Limpiar Historial de Chat", use_container_width=True):
+                st.session_state.chat_history = []
+                st.rerun()
 
     with col_chat:
         st.markdown("### 💬 Consultas Financieras y Contractuales")
@@ -579,7 +593,7 @@ with tab3:
                     with st.expander("📌 Ver Citas de Fuentes y Evidencias"):
                         for c in msg["citations"]:
                             st.markdown(
-                                f"<span class='citation-badge'>Pág. {c['page_number']} | Score: {c['score']}</span>",
+                                f"<span class='citation-badge'>Pág. {c['page_number']} | Similitud: {c['score']}</span>",
                                 unsafe_allow_html=True
                             )
                             st.caption(f"_{c['excerpt']}_")
@@ -593,9 +607,10 @@ with tab3:
             with st.chat_message("assistant"):
                 with st.spinner("Consultando Vector DB y procesando respuesta auditable..."):
                     try:
+                        active_query_domain = upload_domain.strip() if upload_domain else None
                         rag_res = api_client.query_rag(
                             query=user_query,
-                            company_domain=upload_domain if upload_domain else None
+                            company_domain=active_query_domain
                         )
                         answer = rag_res.get("answer", "Sin respuesta.")
                         citations = rag_res.get("citations", [])
