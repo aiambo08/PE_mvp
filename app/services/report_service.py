@@ -10,6 +10,8 @@ class ICReportGenerator:
         profile: dict,
         scoring: dict,
         output_path: str,
+        contact_email: str | None = None,
+        social_links: list[str] | None = None,
     ) -> str:
         company_name = profile.get("company_name", "N/A")
         total_score = scoring.get("total_score", 0)
@@ -37,6 +39,15 @@ class ICReportGenerator:
         else:
             b_rows = "<li>Sin desglose disponible</li>"
 
+        # Canales de contacto y outreach
+        contact_parts = []
+        if contact_email:
+            contact_parts.append(f"<strong>Email:</strong> {contact_email}")
+        if social_links:
+            social_tags = " ".join([f"<span style='background:#e2e8f0;padding:2px 6px;border-radius:3px;margin-right:4px;'>{link}</span>" for link in social_links])
+            contact_parts.append(f"<strong>Redes:</strong> {social_tags}")
+        contact_row = f"<div class=card style=margin-bottom:10px><h3>Contacto & Outreach</h3><p>{' | '.join(contact_parts)}</p></div>" if contact_parts else ""
+
         # Build HTML via list join to avoid f-string brace conflicts with CSS
         css = (
             "body{font-family:Helvetica;font-size:8.5pt;color:#0f172a;}"
@@ -57,6 +68,7 @@ class ICReportGenerator:
             "<div class=card><p>MODELO</p><p class=mv style=font-size:10pt>" + business_model + "</p></div>",
             "</div>",
             "<div class=card style=margin-bottom:10px><h3>Actividad Core</h3><p>" + core_activity + "</p></div>",
+            contact_row,
             "<div class=grid>",
             "<div class=card><h3>Fortalezas Clave</h3><ul>" + s_rows + "</ul></div>",
             "<div class=card><h3>Riesgos Operativos</h3><ul>" + r_rows + "</ul></div>",
