@@ -1382,6 +1382,19 @@ wheels = [
 ]
 
 [[package]]
+name = "llama-index-embeddings-ollama"
+version = "0.2.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "llama-index-core" },
+    { name = "ollama" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/c3/bb/f187d929b47e39d0e8bd4ae17ff9cb68e23b8000275fd834c9b7adb5948d/llama_index_embeddings_ollama-0.2.0.tar.gz", hash = "sha256:5673c740e1dd146e17d1c0401c1e179c0d559caf0967f4a4721b89fbb6822ad8", size = 2288, upload-time = "2024-08-19T01:11:44.514Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/1c/4c/c16dbcb16fb7379fc031a1f18941527596db40000a6c1d6813d4dece12f6/llama_index_embeddings_ollama-0.2.0-py3-none-any.whl", hash = "sha256:372b059321386bd9bbf4f619ad33dd551adb9ee92eeeb0c664d3466f7c212e2e", size = 2582, upload-time = "2024-08-19T01:11:43.337Z" },
+]
+
+[[package]]
 name = "llama-index-embeddings-openai"
 version = "0.1.11"
 source = { registry = "https://pypi.org/simple" }
@@ -2017,6 +2030,18 @@ wheels = [
 ]
 
 [[package]]
+name = "ollama"
+version = "0.3.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "httpx" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/a6/8e/60a9b065eb796ef3996451cbe2d8044f6b030696166693b9805ae33b8b4c/ollama-0.3.3.tar.gz", hash = "sha256:f90a6d61803117f40b0e8ff17465cab5e1eb24758a473cfe8101aff38bc13b51", size = 10390, upload-time = "2024-09-09T17:23:43.495Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/6a/ca/d22905ac3f768523f778189d38c9c6cd9edf4fa9dd09cb5a3fc57b184f90/ollama-0.3.3-py3-none-any.whl", hash = "sha256:ca6242ce78ab34758082b7392df3f9f6c2cb1d070a9dede1a4c545c929e16dba", size = 10267, upload-time = "2024-09-09T17:23:41.841Z" },
+]
+
+[[package]]
 name = "openai"
 version = "1.14.1"
 source = { registry = "https://pypi.org/simple" }
@@ -2110,6 +2135,7 @@ dependencies = [
     { name = "instructor" },
     { name = "llama-index" },
     { name = "llama-index-embeddings-huggingface" },
+    { name = "llama-index-embeddings-ollama" },
     { name = "llama-index-vector-stores-qdrant" },
     { name = "openai" },
     { name = "pandas" },
@@ -2135,6 +2161,7 @@ requires-dist = [
     { name = "instructor", specifier = "==1.1.0" },
     { name = "llama-index", specifier = "==0.10.19" },
     { name = "llama-index-embeddings-huggingface", specifier = ">=0.1.4" },
+    { name = "llama-index-embeddings-ollama", specifier = ">=0.2.0" },
     { name = "llama-index-vector-stores-qdrant", specifier = "==0.1.5" },
     { name = "openai", specifier = "==1.14.1" },
     { name = "pandas", specifier = "==2.2.1" },
