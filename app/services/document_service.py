@@ -7,9 +7,7 @@ import pdfplumber
 from qdrant_client import QdrantClient
 from qdrant_client.http import models as qmodels
 
-from llama_index.core import Document, VectorStoreIndex, StorageContext
-from llama_index.core.node_parser import SentenceWindowNodeParser
-from llama_index.vector_stores.qdrant import QdrantVectorStore
+from llama_index.core import Document
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 
 from app.config import settings
@@ -92,6 +90,9 @@ def _extract_pdf_with_tables(file_path: str) -> list[dict]:
 # Servicio de ingesta de documentos
 # ---------------------------------------------------------------------------
 
+from llama_index.core.node_parser import SentenceSplitter
+from qdrant_client.http.models import PointStruct
+
 class DocumentIngestionService:
     def __init__(self, embed_model: HuggingFaceEmbedding | None = None):
         # 1. Cliente Qdrant (remoto o in-memory — decidido en runtime)
@@ -99,24 +100,13 @@ class DocumentIngestionService:
         self.collection_name = "pe_due_diligence"
         self._ensure_collection_exists()
 
-        # 2. Modelo de embeddings — singleton inyectable para compartir con RAGService
-        self.embed_model = embed_model or HuggingFaceEmbedding(model_name="BAAI/bge-small-en-v1.5")
+        # 2. Modelo de embeddings multilingüe optimizado para español e inglés financiero
+        self.embed_model = embed_model or HuggingFaceEmbedding(model_name="intfloat/multilingual-e5-small")
 
-        # 3. Vector Store de LlamaIndex apuntando a Qdrant
-        self.vector_store = QdrantVectorStore(
-            client=self.qdrant_client,
-            collection_name=self.collection_name,
-        )
-
-        # 4. SentenceWindowNodeParser:
-        #    window_size=5 mantiene 5 frases de contexto alrededor de cada nodo hoja.
-        #    Esto evita truncar cifras financieras en milticolumna o tablas largas.
-        #    HierarchicalNodeParser alternativo: útil si los documentos tienen secciones
-        #    bien delimitadas, pero rompe tablas con saltos de línea internos.
-        self.node_parser = SentenceWindowNodeParser.from_defaults(
-            window_size=5,
-            window_metadata_key="window",
-            original_text_metadata_key="original_text",
+        # 3. Chunking con preservación de tablas y bloques financieros íntegros
+        self.node_parser = SentenceSplitter(
+            chunk_size=800,
+            chunk_overlap=150,
         )
 
     def _ensure_collection_exists(self) -> None:
@@ -126,7 +116,7 @@ class DocumentIngestionService:
             self.qdrant_client.create_collection(
                 collection_name=self.collection_name,
                 vectors_config=qmodels.VectorParams(
-                    size=384,                          # bge-small-en-v1.5 → 384 dims
+                    size=384,                          # multilingual-e5-small → 384 dims
                     distance=qmodels.Distance.COSINE,
                 ),
             )
@@ -138,7 +128,7 @@ class DocumentIngestionService:
         """
         Pipeline completo:
         1. Extracción estructurada con pdfplumber (tablas → Markdown)
-        2. Parseo en nodos con ventana de contexto (SentenceWindow)
+        2. Parseo en nodos conservando bloques semánticos y estados contables
         3. Pre-cómputo de embeddings en thread pool
         4. Upsert a Qdrant (sin bloquear el event loop)
         """
@@ -191,16 +181,32 @@ class DocumentIngestionService:
 
         await loop.run_in_executor(None, compute_and_assign_embeddings)
 
-        # 5. Upsert a Qdrant — los embeddings ya están calculados, solo inserta puntos
-        storage_context = StorageContext.from_defaults(vector_store=self.vector_store)
+        # 5. Upsert directo a Qdrant — sin abstracción LlamaIndex para garantizar
+        #    que el payload sea exactamente el que rag_service.py espera leer.
+        points = [
+            PointStruct(
+                id=str(uuid.uuid4()),
+                vector=node.embedding,
+                payload={
+                    "document_id": doc_id,
+                    "filename": filename,
+                    "company_domain": company_domain,
+                    "page_number": int(node.metadata.get("page_number", 1)),
+                    "text": node.get_content(),
+                },
+            )
+            for node in nodes
+        ]
         await loop.run_in_executor(
             None,
-            lambda: VectorStoreIndex(
-                nodes=nodes,
-                storage_context=storage_context,
-                embed_model=self.embed_model,
-                show_progress=False,
+            lambda: self.qdrant_client.upsert(
+                collection_name=self.collection_name,
+                points=points,
             ),
+        )
+        logger.info(
+            "Upsert completado — %d puntos en colección '%s' para dominio '%s'.",
+            len(points), self.collection_name, company_domain,
         )
 
         return DocumentUploadResponse(
