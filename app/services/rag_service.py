@@ -18,40 +18,26 @@ logger = logging.getLogger(__name__)
 # System prompt con restricciones anti-alucinación de precisión financiera
 # ---------------------------------------------------------------------------
 _SYSTEM_PROMPT = """\
-Eres un Auditor Principal de Due Diligence Financiera para operaciones de Private Equity.
-Tu único objetivo es responder preguntas basándote EXCLUSIVAMENTE en el contexto proporcionado.
+Eres un Asesor Senior y Auditor Principal de Due Diligence Financiera para Comités de Inversión de Private Equity.
+Tu objetivo es responder a las preguntas del analista de manera precisa, estructurada, exhaustiva y fundamentada EXCLUSIVAMENTE en el contexto documental proporcionado.
 
 ═══════════════════════════════════════════════════════
-REGLAS DE ORO — INCUMPLIRLAS INVALIDA TU ANÁLISIS
+DIRECTRICES DE AUDITORÍA FINANCIERA (M&A)
 ═══════════════════════════════════════════════════════
 
-1. SOLO CONTEXTO: Responde únicamente con información extraída literalmente del CONTEXTO.
-   Nunca uses conocimiento externo ni rellenes huecos con estimaciones.
+1. FIDELIDAD DOCUMENTAL:
+   - Basa tus respuestas únicamente en los datos, tablas, estados financieros y cláusulas presentes en el contexto.
+   - Cita siempre las cifras exactas, ejercicios fiscales (FY2023, FY2024, FY2025, etc.), porcentajes y add-backs tal como aparecen.
 
-2. INFORMACIÓN INSUFICIENTE: Si el contexto no contiene datos suficientes para responder
-   con certeza, responde exactamente con esta frase y nada más:
-   "INFORMACIÓN INSUFICIENTE EN LOS DOCUMENTOS ANALIZADOS."
+2. CITAS DE AUDITORÍA:
+   - Menciona el número de página de procedencia de cada dato financiero clave o cláusula relevante (ej. [Pág. 1], [Pág. 2]).
 
-3. PROHIBICIÓN ABSOLUTA DE CÁLCULOS INVENTADOS:
-   - NO realices divisiones ni operaciones matemáticas a menos que el resultado
-     esté explícitamente escrito en el contexto.
-   - Si ves "Ventas: 4.200 k€" y "EBITDA: 630 k€", NO calcules el margen tú mismo.
-     Solo cítalo si el porcentaje aparece explícitamente en el texto o tabla.
+3. RIGOR EN TABLAS Y ESTADOS FINANCIEROS:
+   - Distingue con precisión entre Ingresos/Ventas, Margen Bruto, EBITDA Reportado vs. EBITDA Normalizado/Ajustado, Deuda Financiera Neta y Covenants bancarios.
+   - Si se detallan gastos extraordinarios o ajustes de EBITDA (add-backs), explícalos claramente.
 
-4. TABLAS Y COLUMNAS: Lee con precisión las cabeceras de columna.
-   Nunca confundas "Margen Bruto %" con "EBITDA %", ni "Ingresos" con "Ventas netas".
-
-5. CITAS OBLIGATORIAS: Cada dato financiero citado debe ir acompañado de su fuente
-   en el formato exacto: [Fuente: {filename}, Pág. {page_number}]
-
-6. CONCENTRACIÓN DE CLIENTES: Si el contexto menciona porcentajes de facturación
-   por cliente, verifica la columna antes de asignar el % al cliente correcto.
-
-7. CIFRAS EXACTAS: Respeta las unidades (k€, M€, %) y el ejercicio fiscal (FY2023/24/25)
-   tal como aparecen. No redondees ni conviertas unidades.
-
-8. CONCISIÓN TÉCNICA: Sé directo y preciso. Sin introducciones, sin resúmenes
-   ni frases como "según el contexto proporcionado…". Ve al dato.
+4. TRANSPARENCIA ANTE DATOS AUSENTES:
+   - Si una métrica o dato específico no aparece en los documentos analizados, acláralo expresamente con rigor profesional sin inventar cifras.
 """.strip()
 
 
@@ -103,8 +89,8 @@ class FinancialRAGService:
         self.qdrant_client = qdrant_client or create_qdrant_client()
         self.collection_name = "pe_due_diligence"
 
-        # Singleton de embeddings — evita doble carga del modelo en RAM
-        self.embed_model = embed_model or HuggingFaceEmbedding(model_name="BAAI/bge-small-en-v1.5")
+        # Singleton de embeddings multilingüe — coherente con DocumentIngestionService
+        self.embed_model = embed_model or HuggingFaceEmbedding(model_name="intfloat/multilingual-e5-small")
 
         # Cliente LLM según configuración
         self.openai_client, self.model = _build_llm_client()
@@ -122,21 +108,18 @@ class FinancialRAGService:
             None, self.embed_model.get_query_embedding, request.query
         )
 
-        # 2. Filtro estricto por empresa objetivo (Aislamiento Multi-Target M&A)
-        if not request.company_domain or not request.company_domain.strip():
-            raise ValueError(
-                "Fallo de Seguridad / Auditoría: Debe especificarse un 'company_domain' "
-                "para aislar el Data Room y evitar fugas de información confidencial entre targets."
+        # 2. Filtro por empresa objetivo (aislamiento de Data Room si se especifica)
+        query_filter = None
+        target_domain = (request.company_domain or "").strip().lower()
+        if target_domain and target_domain not in {"all", "todos", "global"}:
+            query_filter = qmodels.Filter(
+                must=[
+                    qmodels.FieldCondition(
+                        key="company_domain",
+                        match=qmodels.MatchValue(value=target_domain),
+                    )
+                ]
             )
-        target_domain = request.company_domain.strip().lower()
-        query_filter = qmodels.Filter(
-            must=[
-                qmodels.FieldCondition(
-                    key="company_domain",
-                    match=qmodels.MatchValue(value=target_domain),
-                )
-            ]
-        )
 
         # 3. Búsqueda vectorial (QdrantClient síncrono → thread pool)
         search_results = await loop.run_in_executor(
@@ -149,79 +132,88 @@ class FinancialRAGService:
             ),
         )
 
-        # 3.1 Verificación defensiva de documentos existentes para este target
+        # 3.1 Si no hay resultados con filtro de dominio, reintentar globalmente
+        if not search_results and query_filter is not None:
+            logger.info("Sin resultados para dominio '%s', ejecutando búsqueda global en Data Room...", target_domain)
+            search_results = await loop.run_in_executor(
+                None,
+                lambda: self.qdrant_client.search(
+                    collection_name=self.collection_name,
+                    query_vector=query_vector,
+                    limit=request.top_k,
+                ),
+            )
+
+        # 3.2 Si aún no hay documentos en la base de datos
         if not search_results:
             return RAGQueryResponse(
                 query=request.query,
                 answer=(
-                    f"INFORMACIÓN INSUFICIENTE: No se encontraron documentos indexados "
-                    f"en el Data Room para el target '{target_domain}'."
+                    "No se encontraron documentos indexados en el Data Room. "
+                    "Por favor, sube un Memorandum (CIM o Auditoría en PDF) e indexalo antes de realizar consultas."
                 ),
                 citations=[],
                 retrieval_time_ms=round((time.time() - start_time) * 1000, 2),
             )
 
-        # 4. Construir citas y bloques de contexto con ventana completa
+        # 4. Construir citas y bloques de contexto
         citations: list[SourceCitation] = []
         context_blocks: list[str] = []
 
         for hit in search_results:
             payload = hit.payload or {}
 
-            # SentenceWindowNodeParser guarda el texto expandido en "window",
-            # y el fragmento original en "original_text". Prioridad: window > text.
+            # Extracción robusta de texto
             window_text = (
-                payload.get("window")
+                payload.get("text")
+                or payload.get("window")
                 or payload.get("original_text")
-                or payload.get("text")
                 or ""
             )
 
-            # Fallback: LlamaIndex puede serializar el nodo en "_node_content" (JSON)
-            if not window_text:
-                raw_content = payload.get("_node_content")
-                if raw_content:
-                    try:
-                        node_data = _json.loads(raw_content)
+            # Fallback: LlamaIndex node content JSON
+            node_metadata = {}
+            if "_node_content" in payload:
+                try:
+                    node_data = _json.loads(payload["_node_content"])
+                    if not window_text:
                         window_text = node_data.get("text", "")
-                    except (ValueError, TypeError):
-                        window_text = str(raw_content)
+                    node_metadata = node_data.get("metadata", {})
+                except (ValueError, TypeError):
+                    pass
 
             if not window_text:
-                logger.warning(
-                    "Payload sin texto recuperable — hit id=%s, doc=%s, keys=%s",
-                    hit.id, payload.get("document_id", "?"), list(payload.keys()),
-                )
+                window_text = str(payload)
+
+            filename = payload.get("filename") or node_metadata.get("filename", "Documento")
+            page_number = int(payload.get("page_number") or node_metadata.get("page_number", 1))
 
             citations.append(
                 SourceCitation(
-                    document_id=payload.get("document_id", "N/A"),
-                    filename=payload.get("filename", "N/A"),
-                    page_number=int(payload.get("page_number", 1)),
-                    score=round(hit.score, 4),
+                    document_id=str(payload.get("document_id") or node_metadata.get("document_id", "N/A")),
+                    filename=str(filename),
+                    page_number=page_number,
+                    score=round(float(hit.score), 4),
                     excerpt=str(window_text)[:300],
                 )
             )
             context_blocks.append(
-                f"[Fuente: {payload.get('filename', 'N/A')}, "
-                f"Pág. {payload.get('page_number', '?')}]\n{window_text}"
+                f"[Fuente: {filename}, Pág. {page_number}]\n{window_text}"
             )
 
         context_str = "\n\n---\n\n".join(context_blocks)
 
-        # 5. Prompt con razonamiento guiado (CoT) para evitar cálculos inventados
+        # 5. Prompt de análisis estructurado para el LLM
         user_prompt = (
-            f"CONTEXTO FINANCIERO RECUPERADO:\n"
+            f"DOCUMENTACIÓN DEL DATA ROOM:\n"
             f"{context_str}\n\n"
             f"════════════════════════════════════\n"
-            f"INSTRUCCIÓN DE RAZONAMIENTO:\n"
-            f"Antes de responder, localiza EXPLÍCITAMENTE en el contexto la frase o celda\n"
-            f"que contiene el dato solicitado. Si no la encuentras, declara INFORMACIÓN INSUFICIENTE.\n"
-            f"════════════════════════════════════\n\n"
-            f"PREGUNTA DEL ANALISTA:\n{request.query}"
+            f"PREGUNTA DEL ANALISTA DE DUE DILIGENCE:\n"
+            f"{request.query}\n\n"
+            f"Por favor, responde de forma clara, directa y fundamentada citando las cifras y páginas exactas."
         )
 
-        # 6. Generación LLM (temperatura 0 = máximo determinismo)
+        # 6. Generación LLM (temperatura 0.0 para máximo determinismo)
         try:
             completion = await self.openai_client.chat.completions.create(
                 model=self.model,
