@@ -122,13 +122,15 @@ class FinancialRAGService:
             )
 
         # 3. Búsqueda vectorial (QdrantClient síncrono → thread pool)
+        # Recuperamos una ventana ampliada de candidatos para permitir deduplicación efectiva
+        candidate_limit = max(request.top_k * 3, 12)
         search_results = await loop.run_in_executor(
             None,
             lambda: self.qdrant_client.search(
                 collection_name=self.collection_name,
                 query_vector=query_vector,
                 query_filter=query_filter,
-                limit=request.top_k,
+                limit=candidate_limit,
             ),
         )
 
@@ -140,7 +142,7 @@ class FinancialRAGService:
                 lambda: self.qdrant_client.search(
                     collection_name=self.collection_name,
                     query_vector=query_vector,
-                    limit=request.top_k,
+                    limit=candidate_limit,
                 ),
             )
 
@@ -156,9 +158,10 @@ class FinancialRAGService:
                 retrieval_time_ms=round((time.time() - start_time) * 1000, 2),
             )
 
-        # 4. Build citations and context blocks
+        # 4. Build citations and context blocks with deduplication
         citations: list[SourceCitation] = []
         context_blocks: list[str] = []
+        seen_fingerprints: set[str] = set()
 
         for hit in search_results:
             payload = hit.payload or {}
@@ -188,6 +191,13 @@ class FinancialRAGService:
             filename = payload.get("filename") or node_metadata.get("filename", "Document")
             page_number = int(payload.get("page_number") or node_metadata.get("page_number", 1))
 
+            # Deduplicación por contenido normalizado y referencia de página
+            clean_sample = " ".join(window_text.split()[:40]).lower()
+            fingerprint = f"{filename}_{page_number}_{clean_sample}"
+            if fingerprint in seen_fingerprints:
+                continue
+            seen_fingerprints.add(fingerprint)
+
             citations.append(
                 SourceCitation(
                     document_id=str(payload.get("document_id") or node_metadata.get("document_id", "N/A")),
@@ -200,6 +210,9 @@ class FinancialRAGService:
             context_blocks.append(
                 f"[Source: {filename}, Page {page_number}]\n{window_text}"
             )
+
+            if len(citations) >= request.top_k:
+                break
 
         context_str = "\n\n---\n\n".join(context_blocks)
 

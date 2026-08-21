@@ -40,7 +40,7 @@ class APIClient:
         response = requests.post(endpoint, data=data, files=files, timeout=60)
         return self._handle_response(response)
     
-    def query_rag(self, query: str, company_domain: Optional[str] = None, top_k: int = 4) -> Dict[str, Any]:
+    def query_rag(self, query: str, company_domain: Optional[str] = None, top_k: int = 6) -> Dict[str, Any]:
         endpoint = f"{self.base_url}/query-rag"
         payload = {"query": query, "company_domain": company_domain, "top_k": top_k}
         response = requests.post(endpoint, json=payload, timeout=60)

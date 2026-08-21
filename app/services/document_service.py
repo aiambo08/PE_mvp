@@ -181,11 +181,34 @@ class DocumentIngestionService:
 
         await loop.run_in_executor(None, compute_and_assign_embeddings)
 
-        # 5. Upsert directo a Qdrant — sin abstracción LlamaIndex para garantizar
-        #    que el payload sea exactamente el que rag_service.py espera leer.
+        # 5. Limpieza previa de fragmentos existentes para garantizar idempotencia
+        try:
+            await loop.run_in_executor(
+                None,
+                lambda: self.qdrant_client.delete(
+                    collection_name=self.collection_name,
+                    points_selector=qmodels.Filter(
+                        must=[
+                            qmodels.FieldCondition(
+                                key="company_domain",
+                                match=qmodels.MatchValue(value=company_domain),
+                            ),
+                            qmodels.FieldCondition(
+                                key="filename",
+                                match=qmodels.MatchValue(value=filename),
+                            ),
+                        ]
+                    ),
+                ),
+            )
+            logger.info("Limpieza previa completada para '%s' en dominio '%s'.", filename, company_domain)
+        except Exception as del_exc:
+            logger.debug("Limpieza previa en Qdrant omitida o sin registros previos: %r", del_exc)
+
+        # 6. Upsert directo a Qdrant con IDs deterministas para evitar duplicidad acumulativa
         points = [
             PointStruct(
-                id=str(uuid.uuid4()),
+                id=str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{company_domain}:{filename}:{i}")),
                 vector=node.embedding,
                 payload={
                     "document_id": doc_id,
@@ -195,7 +218,7 @@ class DocumentIngestionService:
                     "text": node.get_content(),
                 },
             )
-            for node in nodes
+            for i, node in enumerate(nodes)
         ]
         await loop.run_in_executor(
             None,

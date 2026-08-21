@@ -18,7 +18,7 @@ class RAGQueryRequest(BaseModel):
         default=None,
         description="Filtro opcional para acotar la búsqueda a un target específico"
     )
-    top_k: int = Field(default=4, ge=1, le=20, description="Número de fragmentos relevantes a recuperar")
+    top_k: int = Field(default=6, ge=1, le=20, description="Número de fragmentos relevantes a recuperar")
 
 
 class SourceCitation(BaseModel):
