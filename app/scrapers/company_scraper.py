@@ -98,11 +98,11 @@ class CompanyWebScraper:
         page: Optional[SyncPage] = None
         try:
             page = context.new_page()
-            response = page.goto(url, wait_until="domcontentloaded", timeout=self.timeout)
+            response = page.goto(url, wait_until="networkidle", timeout=self.timeout)
             if not response or response.status >= 400:
                 logger.warning("HTTP %s for URL: %s", response and response.status, url)
                 return None
-            page.wait_for_timeout(1_000)
+            page.wait_for_timeout(2_000)  # Allow SPA frameworks (React/Next.js) to fully hydrate
             html = page.content()
             title = page.title()
             cleaned_text = self._clean_html_to_text(html)
@@ -159,20 +159,20 @@ class CompanyWebScraper:
                     # ── 2. Descubrir enlaces internos ─────────────────────
                     nav_page = context.new_page()
                     try:
-                        nav_page.goto(base_url, wait_until="domcontentloaded", timeout=self.timeout)
+                        nav_page.goto(base_url, wait_until="networkidle", timeout=self.timeout)
                         all_links: list[str] = nav_page.eval_on_selector_all(
                             "a[href]", "els => els.map(e => e.href)"
                         )
                     finally:
                         nav_page.close()
 
-                    relevant_urls = [
+                    relevant_urls = sorted([
                         link
-                        for link in dict.fromkeys(all_links)  # deduplica, preserva orden
+                        for link in dict.fromkeys(all_links)  # deduplica
                         if domain in link
                         and any(kw in link.lower() for kw in _TARGET_KEYWORDS)
                         and link.rstrip("/") != base_url.rstrip("/")
-                    ][:_MAX_SUBPAGES]
+                    ])[:_MAX_SUBPAGES]  # sorted() ensures deterministic subpage selection
 
                     social_links = self._extract_social_links(all_links)
 

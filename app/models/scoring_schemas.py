@@ -46,7 +46,14 @@ def _extract_thesis(profile: dict) -> float:
     thesis = profile.get('investment_thesis', {})
     pts = 0
     if thesis.get('buy_and_build_potential'):         pts += 15
-    if profile.get('is_family_owned_or_founder_led'): pts += 15
+    # Gradual scoring: None (uncertain) gets partial credit instead of full zero.
+    # This reduces score amplification when the LLM oscillates between null and true.
+    # True → 15pts | None → 5pts (uncertainty penalty) | False → 0pts
+    founder_led = profile.get('is_family_owned_or_founder_led')
+    if founder_led is True:
+        pts += 15
+    elif founder_led is None:
+        pts += 5   # Conservative partial credit for unconfirmed succession signal
     return min(1.0, pts / 30.0)
 
 
@@ -80,118 +87,118 @@ def _extract_geographic_reach(profile: dict) -> float:
     return scores.get(str(footprint).upper(), 0.0)
 
 
-# ── CATÁLOGO DE CRITERIOS ────────────────────────────────────────────────────
+# ── SCORING CRITERIA CATALOG ──────────────────────────────────────────────────
 
 SCORING_CRITERIA: Dict[str, dict] = {
-    # ── FASE A: Criterios con datos en todos los perfiles (incluso antiguos) ─────
+    # ── PHASE A: Universal criteria (available across all profiles) ─────────────
     'w_bm': {
-        'label': 'Modelo de Negocio',
-        'description': 'Calidad y recurrencia del modelo: B2B SaaS > Industrial > Servicios B2B > B2C',
+        'label': 'Business Model',
+        'description': 'Model quality & recurring profile: B2B SaaS > Industrial > B2B Services > B2C',
         'icon': '🏗️',
         'extractor': _extract_business_model,
         'default_weight': 30,
-        'group': 'Comercial',
+        'group': 'Commercial',
         'phase': 'A',
     },
     'w_scale': {
-        'label': 'Escala / Headcount',
-        'description': 'Tamaño de la empresa: foco en Medianas (50-249 FTEs) para Buyout Mid-Market',
+        'label': 'Scale / Headcount',
+        'description': 'Company size: focus on Medium (50-249 FTEs) for Lower Mid-Market Buyouts',
         'icon': '📏',
         'extractor': _extract_scale,
         'default_weight': 25,
-        'group': 'Escala',
+        'group': 'Scale',
         'phase': 'A',
     },
     'w_digital': {
-        'label': 'Madurez Digital',
-        'description': 'Señales de transformación digital: portal de clientes, stack moderno, e-commerce',
+        'label': 'Digital Maturity',
+        'description': 'Digital transformation signals: client portal, modern tech stack, e-commerce',
         'icon': '💻',
         'extractor': _extract_digital,
         'default_weight': 15,
-        'group': 'Creación de Valor',
+        'group': 'Value Creation',
         'phase': 'A',
     },
     'w_thesis': {
-        'label': 'Potencial M&A / Relevo',
-        'description': 'Señales de Buy-and-Build y empresa familiar con oportunidad de sucesión',
+        'label': 'M&A / Succession Potential',
+        'description': 'Buy-and-Build platform potential and family business succession opportunity',
         'icon': '🤝',
         'extractor': _extract_thesis,
         'default_weight': 30,
-        'group': 'Gobernanza & M&A',
+        'group': 'Governance & M&A',
         'phase': 'A',
     },
-    # ── FASE B: Criterios nuevos — requieren análisis post-actualización ─────────
+    # ── PHASE B: Enhanced signals (extracted via updated LLM schema) ───────────
     'recurring_revenue': {
-        'label': 'Ingresos Recurrentes',
-        'description': 'Contratos recurrentes, suscripciones, cuotas mensuales, retainers o modelo SaaS',
+        'label': 'Recurring Revenue',
+        'description': 'Recurring contracts, subscriptions, retainers, maintenance plans, or SaaS model',
         'icon': '💰',
         'extractor': _extract_recurring_revenue,
         'default_weight': 20,
-        'group': 'Comercial',
+        'group': 'Commercial',
         'phase': 'B',
     },
     'industry_certs': {
-        'label': 'Certificaciones Industriales',
-        'description': 'ISO 9001/27001, GMP, marcado CE, licencias regulatorias o certificaciones sectoriales',
+        'label': 'Industry Certifications',
+        'description': 'ISO 9001/27001, GMP, CE mark, regulatory licenses, or sector-specific certifications',
         'icon': '🏅',
         'extractor': _extract_industry_certs,
         'default_weight': 15,
-        'group': 'Defensibilidad',
+        'group': 'Defensibility',
         'phase': 'B',
     },
     'geographic_reach': {
-        'label': 'Alcance Geográfico',
-        'description': 'Puntuación de expansión: Internacional (1.0) > Ibérica (0.75) > Nacional (0.50) > Local (0.20)',
+        'label': 'Geographic Reach',
+        'description': 'Expansion score: International (1.0) > Regional/Iberian (0.75) > National (0.50) > Local (0.20)',
         'icon': '🌍',
         'extractor': _extract_geographic_reach,
         'default_weight': 15,
-        'group': 'Escala',
+        'group': 'Scale',
         'phase': 'B',
     },
 }
 
 THESIS_PRESETS: Dict[str, dict] = {
-    'Equilibrado Mid-Market (Estándar)': {
+    'Balanced Mid-Market (Standard)': {
         'active_criteria': ['w_bm', 'w_scale', 'w_digital', 'w_thesis'],
         'weights': {'w_bm': 30, 'w_scale': 25, 'w_digital': 15, 'w_thesis': 30},
         'knockout_b2b': False,
         'knockout_min_scale': None,
-        'desc': 'Enfoque general para Buyouts en Pymes industriales y B2B.',
+        'desc': 'Balanced approach for Buyouts in industrial and B2B SME targets.',
     },
     'Aggressive Buy-and-Build (Roll-Up)': {
         'active_criteria': ['w_bm', 'w_scale', 'w_thesis'],
         'weights': {'w_bm': 25, 'w_scale': 25, 'w_thesis': 50},
         'knockout_b2b': True,
         'knockout_min_scale': 'SMALL_BUSINESS',
-        'desc': 'Prioriza consolidación inorgánica y relevo generacional. Descarta B2C y microempresas.',
+        'desc': 'Prioritizes inorganic consolidation and succession. Discards B2C and micro-enterprises.',
     },
-    'Asset-Light & Transformación Digital': {
+    'Asset-Light & Digital Transformation': {
         'active_criteria': ['w_bm', 'w_digital', 'w_scale'],
         'weights': {'w_bm': 40, 'w_digital': 40, 'w_scale': 20},
         'knockout_b2b': False,
         'knockout_min_scale': None,
-        'desc': 'Foco en B2B SaaS, portales de clientes y modernización tech.',
+        'desc': 'Focus on B2B SaaS, customer portals, and technology modernization.',
     },
-    'Relevo Generacional / Fundador': {
+    'Founder Succession / Generational Transition': {
         'active_criteria': ['w_bm', 'w_scale', 'w_thesis'],
         'weights': {'w_bm': 20, 'w_scale': 25, 'w_thesis': 55},
         'knockout_b2b': False,
         'knockout_min_scale': 'SMALL_BUSINESS',
-        'desc': 'Foco en empresas familiares con oportunidad de sucesión.',
+        'desc': 'Focus on family-owned and founder-led companies with succession opportunity.',
     },
-    'SaaS Growth & Recurrencia': {
+    'SaaS Growth & Recurring Revenue': {
         'active_criteria': ['w_bm', 'recurring_revenue', 'w_digital', 'geographic_reach'],
         'weights': {'w_bm': 35, 'recurring_revenue': 35, 'w_digital': 20, 'geographic_reach': 10},
         'knockout_b2b': True,
         'knockout_min_scale': None,
-        'desc': 'Prioriza modelos SaaS y contratos de ingresos recurrentes con potencial de expansión geográfica.',
+        'desc': 'Prioritizes SaaS models and recurring revenue contracts with geographic expansion potential.',
     },
-    'Defensibilidad Industrial': {
+    'Industrial Defensibility & Moats': {
         'active_criteria': ['w_bm', 'w_scale', 'industry_certs', 'recurring_revenue'],
         'weights': {'w_bm': 30, 'w_scale': 25, 'industry_certs': 25, 'recurring_revenue': 20},
         'knockout_b2b': False,
         'knockout_min_scale': 'SMALL_BUSINESS',
-        'desc': 'Foco en pymes industriales con barreras regulatorias (ISO, CE, GMP) e ingresos recurrentes.',
+        'desc': 'Focus on industrial SMEs with regulatory barriers (ISO, CE, GMP) and recurring revenues.',
     },
 }
 
@@ -219,7 +226,7 @@ class InvestmentMandateConfig(BaseModel):
     def validate_criteria_have_weights(self) -> 'InvestmentMandateConfig':
         for key in self.active_criteria:
             if key not in SCORING_CRITERIA:
-                raise ValueError(f'Criterio desconocido: {key!r}')
+                raise ValueError(f'Unknown criterion: {key!r}')
             if key not in self.weights:
                 self.weights[key] = SCORING_CRITERIA[key]['default_weight']
         return self

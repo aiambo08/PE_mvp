@@ -2,6 +2,7 @@ import json
 import logging
 import shutil, os
 import re
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import List
@@ -76,7 +77,7 @@ async def health_check():
 
 @app.get("/api/v1/companies")
 async def list_analyzed_companies():
-    """Retorna la lista completa de empresas analizadas sin acoplamiento a disco en la UI."""
+    """Returns complete list of analyzed targets from disk repository."""
     results = []
     if RESULTS_DIR.exists():
         for file in RESULTS_DIR.glob("*.json"):
@@ -87,24 +88,24 @@ async def list_analyzed_companies():
                     if data.get("status") == "SUCCESS":
                         results.append(data)
             except Exception as e:
-                logger.warning("Error leyendo archivo de resultado '%s': %r", file.name, e)
+                logger.warning("Error reading result file '%s': %r", file.name, e)
     return results
 
 @app.get("/api/v1/companies/{domain}/teaser-pdf")
 async def get_company_teaser_pdf(domain: str):
     """
-    Genera y retorna el Investment Teaser en PDF de forma centralizada en el backend.
+    Generates and returns the Investment Teaser PDF from the backend.
     """
     file_path = RESULTS_DIR / f"{domain}.json"
     if not file_path.exists():
-        raise HTTPException(status_code=404, detail="Empresa target no encontrada.")
+        raise HTTPException(status_code=404, detail="Target company not found.")
 
     async with aiofiles.open(file_path, "r", encoding="utf-8") as f:
         data = json.loads(await f.read())
 
     pdf_output_path = f"data/reports/{domain}_one_pager.pdf"
     
-    # Delegar la generación al servicio
+    # Delegate generation to report service
     ICReportGenerator.generate_one_pager_pdf(
         domain=domain,
         profile=data.get("profile", {}),
@@ -124,9 +125,8 @@ async def get_company_teaser_pdf(domain: str):
 @app.post("/api/v1/recalculate-scores")
 async def recalculate_scores(mandate: InvestmentMandateConfig) -> List[dict]:
     """
-    Recalcula el PE Target Score de todas las empresas almacenadas en disco
-    usando el mandato de inversión recibido. No requiere re-scraping ni llamada LLM.
-    Respuesta determinista en < 100 ms para repositorios de hasta ~500 empresas.
+    Recalculates PE Target Score for all stored targets on disk using the provided mandate.
+    Requires no scraping or LLM calls. Deterministic sub-100ms response.
     """
     results = []
     if RESULTS_DIR.exists():
@@ -147,7 +147,7 @@ async def recalculate_scores(mandate: InvestmentMandateConfig) -> List[dict]:
                     "social_links": data.get("social_links", []),
                 })
             except Exception as e:
-                logger.warning("Error recalculando score para '%s': %r", file.name, e)
+                logger.warning("Error recalculating score for '%s': %r", file.name, e)
     return results
 
 
@@ -162,10 +162,11 @@ class StressSimulationRequest(BaseModel):
 
 class AnalyzeCompanyRequest(BaseModel):
     url: str
+    force_refresh: bool = False  # When True, bypasses cache and re-scrapes + re-extracts
 
 @app.post("/api/v1/simulate-leverage", response_model=SensitivityMatrixResponse)
 async def simulate_leverage(req: StressSimulationRequest):
-    """Ejecuta el análisis de estrés de covenants financieros y solvencia LBO."""
+    """Executes financial covenants and LBO solvency stress sensitivity analysis."""
     try:
         data = FinancialStressEngine.run_sensitivity_matrix(
             revenue=req.revenue,
@@ -186,11 +187,31 @@ async def analyze_company(request: AnalyzeCompanyRequest):
     extractor: CompanyExtractionService = app.state.extractor
 
     try:
+        # ── Cache check: return stored result if fresh ────────────────────
+        # Extracts domain from URL for cache key lookup
+        from urllib.parse import urlparse
+        _parsed = urlparse(request.url if "://" in request.url else f"https://{request.url}")
+        _cache_domain = _parsed.netloc or request.url
+        _cache_path = RESULTS_DIR / f"{_cache_domain}.json"
+
+        if not request.force_refresh and _cache_path.exists():
+            age_hours = (time.time() - _cache_path.stat().st_mtime) / 3600
+            if age_hours < settings.CACHE_TTL_HOURS:
+                logger.info(
+                    "Cache hit for '%s' (age: %.1fh < TTL: %.1fh). Returning stored result.",
+                    _cache_domain, age_hours, settings.CACHE_TTL_HOURS,
+                )
+                async with aiofiles.open(_cache_path, "r", encoding="utf-8") as f:
+                    cached_data = json.loads(await f.read())
+                if cached_data.get("status") == "SUCCESS":
+                    return JSONResponse(content=cached_data)
+
+        # ── Full pipeline: scrape + extract + score ───────────────────────
         raw_data = await scraper.scrape_company(request.url)
         if raw_data.scrape_status == "FAILED":
             raise HTTPException(
                 status_code=400,
-                detail=f"Scraping fallido: {raw_data.error_message or 'No se pudo acceder a la página web.'}"
+                detail=f"Scraping failed: {raw_data.error_message or 'Could not access the website.'}"
             )
 
         analysis_result = await extractor.extract_and_score(raw_data)
@@ -199,10 +220,10 @@ async def analyze_company(request: AnalyzeCompanyRequest):
             logger.error("Analysis failed for %s: %s", request.url, analysis_result.get("error"))
             raise HTTPException(
                 status_code=502,
-                detail=f"Extracción LLM fallida: {analysis_result.get('error')}",
+                detail=f"LLM Extraction failed: {analysis_result.get('error')}",
             )
 
-        # I/O asíncrono — no bloquea el event loop de asyncio
+        # Async I/O — does not block asyncio event loop
         file_path = RESULTS_DIR / f"{raw_data.company_domain}.json"
         async with aiofiles.open(file_path, "w", encoding="utf-8") as f:
             await f.write(json.dumps(analysis_result, ensure_ascii=False, indent=2))
@@ -220,7 +241,7 @@ async def analyze_company(request: AnalyzeCompanyRequest):
 @app.post("/api/v1/upload-document", response_model=DocumentUploadResponse)
 async def upload_document(file: UploadFile = File(...), company_domain: str = Form(...)):
     if not file.filename.endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Solo se permiten archivos PDF.")
+        raise HTTPException(status_code=400, detail="Only PDF files are allowed.")
 
     temp_dir = Path("data/uploaded_pdfs")
     temp_dir.mkdir(parents=True, exist_ok=True)
@@ -239,17 +260,19 @@ async def upload_document(file: UploadFile = File(...), company_domain: str = Fo
         )
         return result
     except AttributeError as e:
-        logger.exception("app.state.ingestion no disponible — lifespan falló al inicializar: %r", e)
-        raise HTTPException(status_code=503, detail=f"Servicio no inicializado: {repr(e)}")
+        logger.exception("app.state.ingestion unavailable — lifespan failed to initialize: %r", e)
+        raise HTTPException(status_code=503, detail=f"Service not initialized: {repr(e)}")
     except Exception as e:
-        logger.exception("Error en upload_document para '%s': %r", file.filename, e)
+        logger.exception("Error in upload_document for '%s': %r", file.filename, e)
         raise HTTPException(status_code=500, detail=f"{type(e).__name__}: {str(e)}")
     finally:
         temp_path.unlink(missing_ok=True)
 
 @app.post("/api/v1/query-rag", response_model=RAGQueryResponse)
-async def query_financial_rag(request: RAGQueryRequest):
+async def query_rag(request: RAGQueryRequest):
     rag_service: FinancialRAGService = app.state.rag
-    return await rag_service.query_due_diligence(request)
-
-    
+    try:
+        return await rag_service.query_due_diligence(request)
+    except Exception as e:
+        logger.exception("Error processing RAG query: %r", e)
+        raise HTTPException(status_code=500, detail=f"RAG query failed: {str(e)}")

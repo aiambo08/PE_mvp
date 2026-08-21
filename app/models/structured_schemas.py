@@ -15,7 +15,7 @@ class BusinessModelType(str, Enum):
 
 
 class CompanyScaleCategory(str, Enum):
-    MICRO_ENTERPRISE = "MICRO_ENTERPRISE"   # < 10 empleados
+    MICRO_ENTERPRISE = "MICRO_ENTERPRISE"   # < 10 employees
     SMALL_BUSINESS = "SMALL_BUSINESS"       # 10–49
     MEDIUM_BUSINESS = "MEDIUM_BUSINESS"     # 50–249
     LARGE_BUSINESS = "LARGE_BUSINESS"       # 250–999
@@ -24,80 +24,81 @@ class CompanyScaleCategory(str, Enum):
 
 
 class GeographicFootprint(str, Enum):
-    """Alcance geográfico estructurado de la empresa (Fase B)."""
-    LOCAL = "LOCAL"               # Solo ciudad / provincia
-    NATIONAL = "NATIONAL"         # Toda España
-    IBERIAN = "IBERIAN"           # España + Portugal
-    INTERNATIONAL = "INTERNATIONAL"  # Presencia fuera de Iberia
+    """Structured geographic reach of the target company."""
+    LOCAL = "LOCAL"               # City / Province only
+    NATIONAL = "NATIONAL"         # Entire Country (Spain / Domestic)
+    IBERIAN = "IBERIAN"           # Regional / Spain + Portugal
+    INTERNATIONAL = "INTERNATIONAL"  # International presence
     UNKNOWN = "UNKNOWN"
 
 
 class DigitalMaturitySignals(BaseModel):
-    # use_enum_values: serializa Enums como strings en el JSON schema enviado al LLM
     model_config = ConfigDict(use_enum_values=True)
 
-    has_client_portal: bool = Field(default=False, description="¿Tiene portal de clientes o intranet?")
-    has_e_commerce: bool = Field(default=False, description="¿Vende directamente online?")
-    modern_tech_stack: bool = Field(default=False, description="¿Menciona APIs, nube o software propio?")
-    active_hiring_signals: bool = Field(default=False, description="¿Menciona expansión de equipo?")
+    has_client_portal: bool = Field(default=False, description="Does the company have a client portal or intranet?")
+    has_e_commerce: bool = Field(default=False, description="Does the company sell directly online / e-commerce?")
+    modern_tech_stack: bool = Field(default=False, description="Mentions APIs, cloud services, or proprietary software?")
+    active_hiring_signals: bool = Field(default=False, description="Mentions team expansion or open job positions?")
 
 
 class PEInvestmentThesis(BaseModel):
     model_config = ConfigDict(use_enum_values=True)
 
-    # FIX Pydantic v2: max_length en Field sobre List limita el nº de elementos correctamente
     key_strengths: Annotated[List[str], Field(min_length=1, max_length=5)] = Field(
-        description="Puntos fuertes para un fondo (ingresos recurrentes, escalabilidad, etc.)"
+        description="Key strengths for a Private Equity fund (recurring revenue, defensibility, scalability, etc.)"
     )
     operational_risks: Annotated[List[str], Field(min_length=1, max_length=5)] = Field(
-        description="Riesgos e ineficiencias clave"
+        description="Key operational risks and potential inefficiencies"
     )
-    buy_and_build_potential: bool = Field(description="¿Permite consolidación inorgánica?")
-    reasoning_summary: str = Field(description="Resumen ejecutivo para el Investment Committee")
+    buy_and_build_potential: bool = Field(description="Enables inorganic consolidation (add-on / roll-up platform)?")
+    reasoning_summary: str = Field(description="Executive summary for the Investment Committee")
 
 
 class StructuredCompanyProfile(BaseModel):
     model_config = ConfigDict(use_enum_values=True)
 
-    company_name: str = Field(description="Nombre comercial de la empresa")
-    business_model: BusinessModelType = Field(description="Modelo de negocio principal")
-    core_activity: str = Field(description="Descripción concisa de la actividad principal (1-2 frases).")
-    target_sectors: List[str] = Field(description="Sectores o industrias a los que sirve la empresa")
+    company_name: str = Field(description="Commercial name of the company")
+    business_model: BusinessModelType = Field(description="Primary business model")
+    core_activity: str = Field(description="Concise description of the core business activity (1-2 sentences).")
+    target_sectors: List[str] = Field(description="Target industries or sectors served by the company")
     estimated_scale: CompanyScaleCategory = Field(
-        default=CompanyScaleCategory.UNKNOWN, description="Escala estimada de la empresa"
+        default=CompanyScaleCategory.UNKNOWN, description="Estimated scale/headcount of the company"
     )
-    # Campo legacy (str libre) — se conserva para retrocompatibilidad con JSONs en disco
-    geographic_reach: str = Field(default="", description="Alcance geográfico libre (legado). Ver geographic_footprint.")
+    geographic_reach: str = Field(default="", description="Free-text geographic reach (legacy). See geographic_footprint.")
     is_family_owned_or_founder_led: Optional[bool] = Field(
-        default=None, description="¿Es pyme familiar o gestionada por el fundador?"
+        default=None, description="Is the company family-owned or founder-led (succession opportunity)?"
     )
-    digital_signals: DigitalMaturitySignals = Field(description="Señales de madurez digital")
-    investment_thesis: PEInvestmentThesis = Field(description="Tesis de inversión para el fondo")
+    digital_signals: DigitalMaturitySignals = Field(description="Digital maturity and technology adoption signals")
+    investment_thesis: PEInvestmentThesis = Field(description="Private equity investment thesis")
 
-    # ── FASE B: Nuevas señales extraídas por el LLM ─────────────────────────
     geographic_footprint: GeographicFootprint = Field(
         default=GeographicFootprint.UNKNOWN,
         description=(
-            "Alcance geográfico REAL de la empresa. "
-            "LOCAL=solo ciudad/provincia. NATIONAL=toda España. "
-            "IBERIAN=España+Portugal. INTERNATIONAL=presencia fuera de Iberia."
+            "Actual geographic footprint of the company. "
+            "LOCAL=city/province only. NATIONAL=country-wide. "
+            "IBERIAN=Spain+Portugal/regional. INTERNATIONAL=presence outside home region."
         ),
     )
-    has_recurring_revenue_signals: bool = Field(
+    has_recurring_revenue_signals: Optional[bool] = Field(
         default=False,
         description=(
-            "¿La empresa menciona contratos recurrentes, suscripciones, cuotas mensuales, "
-            "retainers o modelo SaaS? Señales: 'tarifa mensual', 'contrato anual', "
-            "'abono', 'mantenimiento recurrente', 'suscripción'."
+            "Does the company show signals of recurring revenue, subscriptions, monthly fees, "
+            "retainers, or SaaS business models? Signals: 'monthly fee', 'annual contract', 'subscription', 'maintenance plan'."
         ),
     )
-    has_industry_certifications: bool = Field(
+    has_industry_certifications: Optional[bool] = Field(
         default=False,
         description=(
-            "¿Menciona certificaciones de calidad o sector? ISO 9001, ISO 27001, GMP, "
-            "marcado CE, licencias regulatorias, certificaciones de sostenibilidad o similares."
+            "Mentions quality or industry certifications? ISO 9001, ISO 27001, GMP, "
+            "CE mark, regulatory licenses, sustainability certifications or similar."
         ),
     )
+
+    @field_validator("has_recurring_revenue_signals", "has_industry_certifications", mode="before")
+    @classmethod
+    def coerce_none_booleans(cls, v: bool | None) -> bool:
+        """LLMs sometimes return null for boolean fields when uncertain. Coerce to False."""
+        return bool(v) if v is not None else False
 
     @field_validator("target_sectors")
     @classmethod
