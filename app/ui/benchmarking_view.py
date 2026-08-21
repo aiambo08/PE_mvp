@@ -6,11 +6,11 @@ from typing import Optional, List, Dict, Any
 
 
 def format_tier_badge(tier_raw: str) -> str:
-    """Mapea los enumerados de Tier a badges con código de color institucional."""
+    """Maps Tier enum values to institutional color-coded badges."""
     mapping = {
-        "TIER_1_HIGH_PRIORITY": "🟢 Tier 1 (Alta Prioridad)",
-        "TIER_2_QUALIFIED": "🟡 Tier 2 (Calificado)",
-        "TIER_3_DISCARD": "🔴 Tier 3 (Descartado)",
+        "TIER_1_HIGH_PRIORITY": "🟢 Tier 1 (High Priority)",
+        "TIER_2_QUALIFIED": "🟡 Tier 2 (Qualified)",
+        "TIER_3_DISCARD": "🔴 Tier 3 (Discard)",
     }
     return mapping.get(tier_raw, f"⚪ {tier_raw}")
 
@@ -19,15 +19,15 @@ def render_benchmarking_matrix(
     companies: Optional[List[Dict[str, Any]]] = None,
     processed_dir: str = "data/processed_json"
 ):
-    """Renderiza la Matriz Comparativa Lado a Lado para estrategias Buy-and-Build."""
-    st.subheader("📊 Matriz Comparativa Buy-and-Build (Roll-Up Cockpit)")
+    """Renders the Side-by-Side Comparative Matrix for Buy-and-Build strategies."""
+    st.subheader("📊 Buy-and-Build Comparative Matrix (Roll-Up Cockpit)")
     st.markdown(
-        "Selecciona targets analizados para comparar sus métricas operativas, señales de madurez digital y encaje de consolidación inorgánica."
+        "Select analyzed targets to benchmark operational metrics, digital maturity signals, and consolidation fit."
     )
 
     available_targets: Dict[str, Dict[str, Any]] = {}
 
-    # 1. Priorizar datos suministrados vía API o fallback a disco
+    # 1. Prioritize data provided via API or fallback to disk
     if companies:
         for data in companies:
             if data.get("status") == "SUCCESS":
@@ -47,40 +47,40 @@ def render_benchmarking_matrix(
 
     if len(available_targets) < 2:
         st.warning(
-            "⚠️ Se necesitan al menos **2 empresas analizadas** en el repositorio para realizar una comparación Buy-and-Build."
+            "⚠️ At least **2 analyzed companies** are required in the repository to run Buy-and-Build benchmarking."
         )
         return
 
-    # 2. Selector Múltiple (2 a 5 Pymes)
+    # 2. Multi-Selector (2 to 5 SMEs)
     target_keys = list(available_targets.keys())
     selected_keys = st.multiselect(
-        "Selecciona los Targets a comparar en la Matriz:",
+        "Select Targets to compare in Matrix:",
         options=target_keys,
         default=target_keys[:min(3, len(target_keys))],
         max_selections=5,
     )
 
     if len(selected_keys) < 2:
-        st.info("Selecciona al menos 2 empresas para activar la matriz comparativa.")
+        st.info("Select at least 2 companies to activate the comparative matrix.")
         return
 
     selected_data = [available_targets[key] for key in selected_keys]
 
-    # 3. Construcción del Diccionario de la Matriz (Criterios en filas, Empresas en columnas)
+    # 3. Matrix Dictionary Construction
     matrix_dict = {
-        "Criterio de Evaluación": [
+        "Evaluation Criterion": [
             "PE Target Score",
-            "Tier de Prioridad",
-            "Modelo de Negocio",
-            "Escala Estimada",
-            "Alcance Geográfico",
-            "Empresa Familiar / Fundador",
-            "Potencial Buy & Build",
-            "Portal Cliente / Intranet",
-            "Tech Stack Moderno",
-            "Señales de Contratación",
-            "Fortaleza Principal (IC)",
-            "Riesgo Operativo Principal",
+            "Priority Tier",
+            "Business Model",
+            "Estimated Scale",
+            "Geographic Reach",
+            "Family-Owned / Founder-Led",
+            "Buy & Build Potential",
+            "Client Portal / Intranet",
+            "Modern Tech Stack",
+            "Hiring Signals",
+            "Primary Strength (IC)",
+            "Primary Operational Risk",
         ]
     }
 
@@ -101,38 +101,38 @@ def render_benchmarking_matrix(
             bm_val,
             scale_val,
             prof.get("geographic_reach", "N/A"),
-            "✅ Sí"
+            "✅ Yes"
             if prof.get("is_family_owned_or_founder_led")
             else (
                 "❌ No"
                 if prof.get("is_family_owned_or_founder_led") is False
-                else "❓ Indeterminado"
+                else "❓ Unknown"
             ),
-            "🟢 Confirmado"
+            "🟢 Confirmed"
             if thesis.get("buy_and_build_potential")
-            else "🔴 No evidente",
-            "✅ Sí" if ds.get("has_client_portal") else "❌ No",
-            "✅ Sí" if ds.get("modern_tech_stack") else "❌ No",
-            "✅ Sí" if ds.get("active_hiring_signals") else "❌ No",
+            else "🔴 Low evidence",
+            "✅ Yes" if ds.get("has_client_portal") else "❌ No",
+            "✅ Yes" if ds.get("modern_tech_stack") else "❌ No",
+            "✅ Yes" if ds.get("active_hiring_signals") else "❌ No",
             thesis.get("key_strengths", ["N/A"])[0] if thesis.get("key_strengths") else "N/A",
             thesis.get("operational_risks", ["N/A"])[0] if thesis.get("operational_risks") else "N/A",
         ]
 
-    # 4. Convertir a DataFrame y fijar índice
+    # 4. Convert to DataFrame and set index
     df_matrix = pd.DataFrame(matrix_dict)
-    df_matrix.set_index("Criterio de Evaluación", inplace=True)
+    df_matrix.set_index("Evaluation Criterion", inplace=True)
 
-    # 5. Renderizar la Matriz Lado a Lado
+    # 5. Render Matrix Side-by-Side
     with st.container(border=True):
-        st.markdown("### 📋 Comparativa Lado a Lado")
+        st.markdown("### 📋 Side-by-Side Benchmark")
         st.dataframe(
             df_matrix,
             use_container_width=True,
             height=460,
         )
 
-    # 6. Tarjetas de Métricas Agregadas y Sinergias del Grupo
-    st.markdown("### 🎯 Sinergias de Grupo & Resumen del Roll-Up")
+    # 6. Aggregate Group Synergy Cards
+    st.markdown("### 🎯 Group Synergies & Roll-Up Summary")
 
     c1, c2, c3, c4 = st.columns(4)
 
@@ -155,7 +155,7 @@ def render_benchmarking_matrix(
         if not t.get("profile", {}).get("digital_signals", {}).get("modern_tech_stack")
     )
 
-    c1.metric("PE Score Promedio", f"{avg_score:.1f} / 100")
-    c2.metric("Aptas para Buy & Build", f"{buy_build_count} de {len(selected_data)}")
-    c3.metric("Relevo Generacional", f"{family_count} de {len(selected_data)}")
-    c4.metric("Oportunidad Gap Digital", f"{digital_gap_count} de {len(selected_data)}")
+    c1.metric("Average PE Score", f"{avg_score:.1f} / 100")
+    c2.metric("Buy & Build Fit", f"{buy_build_count} of {len(selected_data)}")
+    c3.metric("Founder Succession", f"{family_count} of {len(selected_data)}")
+    c4.metric("Digital Gap Opportunity", f"{digital_gap_count} of {len(selected_data)}")

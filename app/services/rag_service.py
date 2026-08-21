@@ -15,29 +15,29 @@ from app.services.document_service import create_qdrant_client
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# System prompt con restricciones anti-alucinación de precisión financiera
+# System prompt with anti-hallucination constraints and financial precision
 # ---------------------------------------------------------------------------
 _SYSTEM_PROMPT = """\
-Eres un Asesor Senior y Auditor Principal de Due Diligence Financiera para Comités de Inversión de Private Equity.
-Tu objetivo es responder a las preguntas del analista de manera precisa, estructurada, exhaustiva y fundamentada EXCLUSIVAMENTE en el contexto documental proporcionado.
+You are a Senior Advisor and Lead Financial Due Diligence Auditor for Private Equity Investment Committees.
+Your objective is to answer analyst inquiries in a precise, structured, exhaustive manner grounded EXCLUSIVELY in the provided document context.
 
 ═══════════════════════════════════════════════════════
-DIRECTRICES DE AUDITORÍA FINANCIERA (M&A)
+FINANCIAL AUDIT GUIDELINES (M&A)
 ═══════════════════════════════════════════════════════
 
-1. FIDELIDAD DOCUMENTAL:
-   - Basa tus respuestas únicamente en los datos, tablas, estados financieros y cláusulas presentes en el contexto.
-   - Cita siempre las cifras exactas, ejercicios fiscales (FY2023, FY2024, FY2025, etc.), porcentajes y add-backs tal como aparecen.
+1. DOCUMENTARY ACCURACY:
+   - Base your responses solely on the data, tables, financial statements, and clauses present in the context.
+   - Always quote exact figures, fiscal years (FY2023, FY2024, FY2025, etc.), percentages, and add-backs exactly as they appear.
 
-2. CITAS DE AUDITORÍA:
-   - Menciona el número de página de procedencia de cada dato financiero clave o cláusula relevante (ej. [Pág. 1], [Pág. 2]).
+2. AUDIT CITATIONS:
+   - Always cite the source page number for every key financial figure or relevant clause (e.g. [Page 1], [Page 2]).
 
-3. RIGOR EN TABLAS Y ESTADOS FINANCIEROS:
-   - Distingue con precisión entre Ingresos/Ventas, Margen Bruto, EBITDA Reportado vs. EBITDA Normalizado/Ajustado, Deuda Financiera Neta y Covenants bancarios.
-   - Si se detallan gastos extraordinarios o ajustes de EBITDA (add-backs), explícalos claramente.
+3. FINANCIAL STATEMENT RIGOR:
+   - Clearly distinguish between Revenue/Sales, Gross Margin, Reported EBITDA vs. Normalized/Adjusted EBITDA, Net Debt, and bank covenants.
+   - If extraordinary expenses or EBITDA adjustments (add-backs) are detailed, explain them clearly.
 
-4. TRANSPARENCIA ANTE DATOS AUSENTES:
-   - Si una métrica o dato específico no aparece en los documentos analizados, acláralo expresamente con rigor profesional sin inventar cifras.
+4. TRANSPARENCY ON MISSING DATA:
+   - If a specific metric or clause does not appear in the analyzed documents, state this explicitly with professional rigor without inventing figures.
 """.strip()
 
 
@@ -144,26 +144,26 @@ class FinancialRAGService:
                 ),
             )
 
-        # 3.2 Si aún no hay documentos en la base de datos
+        # 3.2 If still no documents in database
         if not search_results:
             return RAGQueryResponse(
                 query=request.query,
                 answer=(
-                    "No se encontraron documentos indexados en el Data Room. "
-                    "Por favor, sube un Memorandum (CIM o Auditoría en PDF) e indexalo antes de realizar consultas."
+                    "No indexed documents found in the Data Room. "
+                    "Please upload a Memorandum (CIM or Audit in PDF) and index it before executing queries."
                 ),
                 citations=[],
                 retrieval_time_ms=round((time.time() - start_time) * 1000, 2),
             )
 
-        # 4. Construir citas y bloques de contexto
+        # 4. Build citations and context blocks
         citations: list[SourceCitation] = []
         context_blocks: list[str] = []
 
         for hit in search_results:
             payload = hit.payload or {}
 
-            # Extracción robusta de texto
+            # Robust text extraction
             window_text = (
                 payload.get("text")
                 or payload.get("window")
@@ -185,7 +185,7 @@ class FinancialRAGService:
             if not window_text:
                 window_text = str(payload)
 
-            filename = payload.get("filename") or node_metadata.get("filename", "Documento")
+            filename = payload.get("filename") or node_metadata.get("filename", "Document")
             page_number = int(payload.get("page_number") or node_metadata.get("page_number", 1))
 
             citations.append(
@@ -198,22 +198,22 @@ class FinancialRAGService:
                 )
             )
             context_blocks.append(
-                f"[Fuente: {filename}, Pág. {page_number}]\n{window_text}"
+                f"[Source: {filename}, Page {page_number}]\n{window_text}"
             )
 
         context_str = "\n\n---\n\n".join(context_blocks)
 
-        # 5. Prompt de análisis estructurado para el LLM
+        # 5. Structured analysis prompt for LLM
         user_prompt = (
-            f"DOCUMENTACIÓN DEL DATA ROOM:\n"
+            f"DATA ROOM DOCUMENTATION:\n"
             f"{context_str}\n\n"
             f"════════════════════════════════════\n"
-            f"PREGUNTA DEL ANALISTA DE DUE DILIGENCE:\n"
+            f"DUE DILIGENCE ANALYST QUESTION:\n"
             f"{request.query}\n\n"
-            f"Por favor, responde de forma clara, directa y fundamentada citando las cifras y páginas exactas."
+            f"Please respond clearly, directly, and exhaustively, citing exact figures and page numbers in English."
         )
 
-        # 6. Generación LLM (temperatura 0.0 para máximo determinismo)
+        # 6. LLM generation (temperature 0.0 for maximum determinism)
         try:
             completion = await self.openai_client.chat.completions.create(
                 model=self.model,
@@ -223,7 +223,7 @@ class FinancialRAGService:
                 ],
                 temperature=0.0,
             )
-            answer = completion.choices[0].message.content or "Sin respuesta generada."
+            answer = completion.choices[0].message.content or "No response generated."
         except Exception as e:
             provider_info = (
                 settings.OLLAMA_BASE_URL
@@ -235,8 +235,8 @@ class FinancialRAGService:
                 settings.LLM_PROVIDER, provider_info, e,
             )
             answer = (
-                f"[ERROR LLM] No se pudo conectar al modelo en {provider_info}. "
-                f"Verifica que {settings.LLM_PROVIDER} esté corriendo: {type(e).__name__}"
+                f"[LLM ERROR] Could not connect to model at {provider_info}. "
+                f"Please verify {settings.LLM_PROVIDER} is running: {type(e).__name__}"
             )
 
         elapsed_ms = (time.time() - start_time) * 1000

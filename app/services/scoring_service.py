@@ -106,12 +106,12 @@ class DynamicPEScoringEngine:
         knocked_out = False
         knockout_reason: str | None = None
 
-        # ── PASO 1: Knockout Check ─────────────────────────────────────────
+        # ── STEP 1: Knockout Check ─────────────────────────────────────────
         if mandate.knockout_b2b:
             bm = profile.get("business_model", "UNKNOWN")
             if bm in ("B2C", "UNKNOWN"):
                 knocked_out = True
-                knockout_reason = f"Modelo {bm} excluido (filtro B2B obligatorio)"
+                knockout_reason = f"Model '{bm}' excluded (mandatory B2B filter)"
 
         if not knocked_out and mandate.knockout_min_scale:
             scale = profile.get("estimated_scale", "UNKNOWN")
@@ -120,7 +120,7 @@ class DynamicPEScoringEngine:
             # UNKNOWN (last index) should also fail the knockout
             if scale == "UNKNOWN" or curr_idx < min_idx:
                 knocked_out = True
-                knockout_reason = f"Escala '{scale}' inferior al mínimo '{mandate.knockout_min_scale}'"
+                knockout_reason = f"Scale '{scale}' below required minimum '{mandate.knockout_min_scale}'"
 
         if knocked_out:
             return {

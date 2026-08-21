@@ -200,9 +200,9 @@ def format_tier_badge(tier_raw: str) -> str:
     if not tier_raw or tier_raw == "N/A":
         return "N/A"
     mapping = {
-        "TIER_1_HIGH_PRIORITY": "🟢 Tier 1 (Alta Prioridad)",
-        "TIER_2_QUALIFIED": "🟡 Tier 2 (Calificado)",
-        "TIER_3_DISCARD": "🔴 Tier 3 (Descartado)",
+        "TIER_1_HIGH_PRIORITY": "🟢 Tier 1 (High Priority)",
+        "TIER_2_QUALIFIED": "🟡 Tier 2 (Qualified)",
+        "TIER_3_DISCARD": "🔴 Tier 3 (Discard)",
     }
     return mapping.get(tier_raw, tier_raw.replace("_", " ").title())
 
@@ -215,11 +215,11 @@ def format_estimated_scale(scale_raw: str) -> str:
     if not scale_raw or scale_raw == "N/A":
         return "N/A"
     mapping = {
-        "MICRO_ENTERPRISE": "Microempresa (<10)",
-        "SMALL_BUSINESS": "Pequeña Empresa (10-49)",
-        "MEDIUM_BUSINESS": "Mediana Empresa (50-249)",
-        "LARGE_BUSINESS": "Gran Empresa (250+)",
-        "UNKNOWN": "No identificada",
+        "MICRO_ENTERPRISE": "Microenterprise (<10)",
+        "SMALL_BUSINESS": "Small Business (10-49)",
+        "MEDIUM_BUSINESS": "Medium Business (50-249)",
+        "LARGE_BUSINESS": "Large Business (250+)",
+        "UNKNOWN": "Unidentified",
     }
     return mapping.get(scale_raw, scale_raw.replace("_", " ").title())
 
@@ -229,22 +229,22 @@ with st.sidebar:
     st.caption("Investment Committee Decision Terminal")
     st.markdown("---")
 
-    # Estado de la API
+    # API Status
     api_status = api_client.check_health()
     if api_status:
-        st.success("🟢 API Backend Conectado")
+        st.success("🟢 Backend API Connected")
     else:
-        st.error("🔴 API Backend Desconectado")
+        st.error("🔴 Backend API Disconnected")
 
-    st.markdown("### ⚙️ Tesis de Inversión y Scoring")
+    st.markdown("### ⚙️ Investment Thesis & Scoring")
 
-    # ── Selector de Preset ────────────────────────────────────────────────────
+    # ── Preset Selector ───────────────────────────────────────────────────────
     preset_names = list(THESIS_PRESETS.keys())
-    selected_preset_name = st.selectbox("Preset de Inversión:", options=preset_names, index=0)
+    selected_preset_name = st.selectbox("Investment Preset:", options=preset_names, index=0)
     preset_data = THESIS_PRESETS[selected_preset_name]
     st.caption(f"_{preset_data['desc']}_")
 
-    # Detectar cambio de preset para resetear el estado de la sesión
+    # Detect preset change to reset session state
     if st.session_state.get("_last_preset") != selected_preset_name:
         st.session_state["_last_preset"] = selected_preset_name
         st.session_state["_active_criteria"] = list(preset_data["active_criteria"])
@@ -252,36 +252,35 @@ with st.sidebar:
         st.session_state["_knockout_b2b"] = preset_data["knockout_b2b"]
         st.session_state["_knockout_min_scale"] = preset_data["knockout_min_scale"]
 
-    # Asegurar que el estado existe (primer render)
+    # Ensure state exists (first render)
     if "_active_criteria" not in st.session_state:
         st.session_state["_active_criteria"] = list(preset_data["active_criteria"])
         st.session_state["_weights"] = dict(preset_data["weights"])
         st.session_state["_knockout_b2b"] = preset_data["knockout_b2b"]
         st.session_state["_knockout_min_scale"] = preset_data["knockout_min_scale"]
 
-    with st.expander("🛠️ Personalizar Mandato de Inversión", expanded=False):
+    with st.expander("🛠️ Customize Investment Mandate", expanded=False):
 
-        # ── Sección 1: Deal-Breakers (Filtros Eliminatorios) ──────────────────
-        st.markdown("**🚫 Filtros Eliminatorios (Deal-Breakers)**")
+        # ── Section 1: Deal-Breakers (Knockout Filters) ──────────────────────
+        st.markdown("**🚫 Deal-Breakers (Knockout Filters)**")
         knockout_b2b = st.checkbox(
-            "Obligatorio B2B (descarta B2C y modelos desconocidos)",
-            value=st.session_state["_knockout_b2b"],
+            "Mandatory B2B (discards B2C and unknown models)",
             key="_knockout_b2b"
         )
 
         scale_options = {
-            "Sin mínimo de escala": None,
-            "Mínimo: Pequeña Empresa (10-49 FTEs)": "SMALL_BUSINESS",
-            "Mínimo: Mediana Empresa (50-249 FTEs)": "MEDIUM_BUSINESS",
+            "No minimum scale": None,
+            "Minimum: Small Business (10-49 FTEs)": "SMALL_BUSINESS",
+            "Minimum: Medium Business (50-249 FTEs)": "MEDIUM_BUSINESS",
         }
-        current_min_scale = st.session_state["_knockout_min_scale"]
+        current_min_scale = st.session_state.get("_knockout_min_scale", preset_data["knockout_min_scale"])
         # Map stored value back to label for selectbox default
         default_scale_label = next(
             (lbl for lbl, val in scale_options.items() if val == current_min_scale),
-            "Sin mínimo de escala"
+            "No minimum scale"
         )
         selected_scale_label = st.selectbox(
-            "Escala mínima requerida:",
+            "Minimum scale required:",
             options=list(scale_options.keys()),
             index=list(scale_options.keys()).index(default_scale_label)
         )
@@ -289,30 +288,30 @@ with st.sidebar:
 
         st.markdown("---")
 
-        # ── Sección 2: Criterios Activos (Multiselect) ────────────────────────
-        st.markdown("**📐 Criterios de Scoring Activos**")
+        # ── Section 2: Active Criteria (Multiselect) ─────────────────────────
+        st.markdown("**📐 Active Scoring Criteria**")
         all_criteria_keys = list(SCORING_CRITERIA.keys())
         criteria_labels = {k: f"{SCORING_CRITERIA[k]['icon']} {SCORING_CRITERIA[k]['label']}" for k in all_criteria_keys}
 
         selected_labels = st.multiselect(
-            "Dimensiones a evaluar:",
+            "Dimensions to evaluate:",
             options=[criteria_labels[k] for k in all_criteria_keys],
             default=[criteria_labels[k] for k in st.session_state["_active_criteria"] if k in criteria_labels],
-            help="Selecciona las dimensiones a ponderar. Los pesos se normalizan automáticamente al 100%."
+            help="Select evaluation dimensions. Weights are automatically normalized to 100%."
         )
         # Reverse-map labels back to keys
         label_to_key = {v: k for k, v in criteria_labels.items()}
         active_criteria = [label_to_key[lbl] for lbl in selected_labels if lbl in label_to_key]
 
         if not active_criteria:
-            st.warning("⚠️ Selecciona al menos un criterio para calcular el scoring.")
+            st.warning("⚠️ Select at least one criterion to calculate scoring.")
             active_criteria = list(preset_data["active_criteria"])  # fallback
 
 
         st.markdown("---")
 
-        # ── Sección 3: Sliders Dinámicos (solo criterios activos) ─────────────
-        st.markdown("**⚖️ Ponderaciones (%)**")
+        # ── Section 3: Dynamic Sliders (active criteria only) ────────────────
+        st.markdown("**⚖️ Weights (%)**")
         raw_weights: Dict[str, float] = {}
         for key in active_criteria:
             crit = SCORING_CRITERIA[key]
@@ -328,17 +327,17 @@ with st.sidebar:
 
         total_w = sum(raw_weights.values())
         if total_w == 0:
-            st.warning("⚠️ Los pesos no pueden ser todos 0.")
+            st.warning("⚠️ Weights cannot all be 0.")
             total_w = 1
         if total_w != 100:
-            st.warning(f"⚠️ Suma: **{total_w}%** → Normalizado a 100% automáticamente")
+            st.warning(f"⚠️ Sum: **{total_w}%** → Normalized to 100% automatically")
         else:
-            st.success("Ponderación al 100% ✅")
+            st.success("Weights at 100% ✅")
 
-        # Persistir el estado de pesos para este preset
+        # Persist weights state
         st.session_state["_weights"] = raw_weights
 
-    # ── Construir el mandato activo ───────────────────────────────────────────
+    # ── Construct Active Mandate ──────────────────────────────────────────────
     active_mandate = InvestmentMandateConfig(
         active_criteria=active_criteria,
         weights=raw_weights,
@@ -347,116 +346,116 @@ with st.sidebar:
     )
 
     st.markdown("---")
-    st.markdown("### 🎯 Filtros Rápidos")
-    target_domain_filter = st.text_input("Filtrar Target por Dominio:", placeholder="ej. websbarcelona.com")
-    min_score_filter = st.slider("Puntuación Mínima (Cut-off):", 0, 90, 0, 5)
+    st.markdown("### 🎯 Quick Filters")
+    target_domain_filter = st.text_input("Filter Target by Domain:", placeholder="e.g. scale.com")
+    min_score_filter = st.slider("Minimum Score (Cut-off):", 0, 90, 0, 5)
 
 
-# ── 6. ESPACIO DE TRABAJO PRINCIPAL (5 TABS) ─────────────────────────────────
-st.title("Plataforma de Inteligencia y Due Diligence de Private Equity")
+# ── 6. MAIN WORKSPACE (5 TABS) ────────────────────────────────────────────────
+st.title("Private Equity Intelligence & Due Diligence Platform")
 
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "🔍 Deal Sourcing & Targets",
-    "⚡ Simulador LBO & Covenants",
+    "⚡ LBO & Covenant Simulator",
     "📄 Due Diligence RAG Copilot",
-    "📊 Repositorio de Empresas",
+    "📊 Target Repository",
     "📈 Benchmarking & Buy-and-Build"
 ])
 
 # ── TAB 1: DEAL SOURCING & TARGET DEEP-DIVE ──────────────────────────────────
 with tab1:
-    st.subheader("Análisis Automatizado de Pymes Target")
-    st.markdown("Introduce la URL de una empresa para ejecutar el scraping web, extracción LLM estructurada y cálculo del **PE Target Score**.")
+    st.subheader("Automated Target SME Analysis")
+    st.markdown("Enter a company domain or URL to trigger web scraping, structured LLM extraction, and dynamic **PE Target Score** computation.")
 
     col_input, col_btn = st.columns([4, 1])
     with col_input:
         target_url = st.text_input(
-            "URL de la Empresa:",
-            placeholder="https://ejemplo-pyme.com",
+            "Company URL:",
+            placeholder="https://example-sme.com",
             label_visibility="collapsed"
         )
     with col_btn:
-        analyze_btn = st.button("🚀 Analizar Target", use_container_width=True)
+        analyze_btn = st.button("🚀 Analyze Target", use_container_width=True)
 
     if analyze_btn and target_url:
-        with st.spinner("Scrapeando sitio web, ejecutando extracción LLM y calculando scoring dinámico..."):
+        with st.spinner("Scraping website, executing LLM extraction, and calculating dynamic scoring..."):
             try:
                 result = api_client.analyze_company(target_url)
                 if result.get("status") == "SUCCESS":
-                    st.success(f"Análisis completado para {result['domain']}")
+                    st.success(f"Analysis completed for {result['domain']}")
 
                     profile = result["profile"]
                     
-                    # Calcular scoring dinámico con el mandato activo de la sesión
+                    # Calculate dynamic score with active session mandate
                     dyn_scoring = recalculate_dynamic_score(profile, active_mandate)
 
-                    # Tarjeta de Métricas Ejecutivas
+                    # Executive Profile Card
                     with st.container(border=True):
-                        st.markdown(f"### Perfil Ejecutivo: **{profile.get('company_name', result['domain'])}**")
-                        st.markdown(f"*{profile.get('core_activity', 'Sin descripción')}.*")
+                        st.markdown(f"### Executive Profile: **{profile.get('company_name', result['domain'])}**")
+                        st.markdown(f"*{profile.get('core_activity', 'No description available')}.*")
                         st.markdown("---")
 
                         m1, m2, m3, m4 = st.columns(4)
                         m1.metric("PE Target Score", f"{dyn_scoring['total_score']} / 100")
-                        m2.metric("Tier de Idoneidad", format_tier_badge(dyn_scoring['tier']))
-                        m3.metric("Modelo de Negocio", format_business_model(profile.get("business_model", "N/A")))
-                        m4.metric("Escala Estimada", format_estimated_scale(profile.get("estimated_scale", "N/A")))
+                        m2.metric("Priority Tier", format_tier_badge(dyn_scoring['tier']))
+                        m3.metric("Business Model", format_business_model(profile.get("business_model", "N/A")))
+                        m4.metric("Estimated Scale", format_estimated_scale(profile.get("estimated_scale", "N/A")))
 
-                        st.progress(dyn_scoring["total_score"] / 100.0, text=f"Idoneidad M&A: {dyn_scoring['total_score']}%")
+                        st.progress(dyn_scoring["total_score"] / 100.0, text=f"M&A Suitability: {dyn_scoring['total_score']}%")
 
                     st.markdown(" ")
 
-                    # Secciones de Detalle Lado a Lado
+                    # Side-by-Side Detail Sections
                     col_left, col_right = st.columns(2)
 
                     with col_left:
                         with st.container(border=True):
-                            st.subheader("💡 Tesis de Inversión y Fortalezas")
+                            st.subheader("💡 Investment Thesis & Strengths")
                             for strength in profile.get("investment_thesis", {}).get("key_strengths", []):
-                                st.markdown(f"• **Fortaleza:** {strength}")
+                                st.markdown(f"• **Strength:** {strength}")
                             st.markdown("---")
-                            st.markdown(f"**Resumen para el IC:**\n{profile.get('investment_thesis', {}).get('reasoning_summary', 'N/A')}")
+                            st.markdown(f"**IC Summary:**\n{profile.get('investment_thesis', {}).get('reasoning_summary', 'N/A')}")
 
                     with col_right:
                         with st.container(border=True):
-                            st.subheader("⚠️ Riesgos Operativos y Desglose")
+                            st.subheader("⚠️ Operational Risks & Breakdown")
                             for risk in profile.get("investment_thesis", {}).get("operational_risks", []):
-                                st.markdown(f"• **Riesgo:** {risk}")
+                                st.markdown(f"• **Risk:** {risk}")
                             st.markdown("---")
-                            st.caption("Puntos por Pilar (Ponderación Dinámica Activa):")
+                            st.caption("Points per Pillar (Active Mandate Weighting):")
                             breakdown = dyn_scoring.get("score_breakdown", {})
                             if dyn_scoring.get("knocked_out"):
-                                st.error(f"🚫 Knockout: {dyn_scoring.get('knockout_reason', 'Filtro eliminatorio activo')}")
+                                st.error(f"🚫 Knockout: {dyn_scoring.get('knockout_reason', 'Active deal-breaker filter')}")
                             elif breakdown:
                                 for label, pts in breakdown.items():
                                     st.metric(label, f"{pts:.1f} pts")
                             else:
-                                st.info("Sin criterios activos para mostrar.")
+                                st.info("No active criteria to display.")
 
-                    # Canales de Contacto & Outreach Directo
+                    # Contact & Direct Outreach Channels
                     contact_email = result.get("contact_email")
                     social_links = result.get("social_links", [])
 
                     with st.container(border=True):
-                        st.markdown("#### 📬 Canales de Contacto & Outreach Directo")
+                        st.markdown("#### 📬 Contact & Direct Outreach Channels")
                         c_mail, c_social = st.columns(2)
                         with c_mail:
                             if contact_email:
-                                st.markdown(f"**📧 Email de Contacto:** [{contact_email}](mailto:{contact_email})")
+                                st.markdown(f"**📧 Contact Email:** [{contact_email}](mailto:{contact_email})")
                             else:
-                                st.markdown("**📧 Email de Contacto:** *No detectado en la web*")
+                                st.markdown("**📧 Contact Email:** *No email detected on website*")
                         with c_social:
                             if social_links:
-                                st.markdown("**🌐 Presencia Digital:**")
+                                st.markdown("**🌐 Digital Presence:**")
                                 badges = []
                                 for s_link in social_links:
                                     net_name = "LinkedIn" if "linkedin.com" in s_link else "Twitter/X" if any(x in s_link for x in ["twitter.com", "x.com"]) else "Instagram" if "instagram.com" in s_link else "Facebook" if "facebook.com" in s_link else "Web"
                                     badges.append(f"[{net_name}]({s_link})")
                                 st.markdown(" • ".join(badges))
                             else:
-                                st.markdown("**🌐 Presencia Digital:** *No se detectaron perfiles sociales*")
+                                st.markdown("**🌐 Digital Presence:** *No social profiles detected*")
 
-                    # Botón de Descarga de Teaser PDF
+                    # Download Investment Teaser Button
                     try:
                         pdf_out_path = f"data/reports/{result['domain']}_one_pager.pdf"
                         ICReportGenerator.generate_one_pager_pdf(
@@ -470,46 +469,46 @@ with tab1:
                         if os.path.exists(pdf_out_path):
                             with open(pdf_out_path, "rb") as pdf_file:
                                 st.download_button(
-                                    label="📄 Descargar Investment Teaser (PDF)",
+                                    label="📄 Download Investment Teaser (PDF)",
                                     data=pdf_file,
                                     file_name=f"IC_Teaser_{result['domain']}.pdf",
                                     mime="application/pdf",
                                     use_container_width=True
                                 )
                     except Exception as pdf_err:
-                        st.warning(f"Aviso en generación PDF: {str(pdf_err)}")
+                        st.warning(f"PDF generation notice: {str(pdf_err)}")
                 else:
-                    st.error(f"Error en análisis: {result.get('error')}")
+                    st.error(f"Analysis error: {result.get('error')}")
             except Exception as e:
-                st.error(f"Error al conectar con la API: {str(e)}")
+                st.error(f"Error connecting to API: {str(e)}")
 
 
-# ── TAB 2: SIMULADOR LBO & ESTRÉS DE COVENANTS ──────────────────────────────
+# ── TAB 2: LBO SIMULATOR & COVENANT STRESS ──────────────────────────────────
 with tab2:
-    st.subheader("⚡ Simulador de Estrés LBO & Rotura de Covenants Bancarios")
+    st.subheader("⚡ LBO Stress Simulator & Debt Covenant Headroom")
     st.markdown(
-        "Modela el impacto del **Apalancamiento Operativo (DOL)** ante caídas de demanda (-5% a -20%) "
-        "y evalúa la solvencia de la estructura de capital y el ratio **DFN / EBITDA**."
+        "Models the impact of **Degree of Operating Leverage (DOL)** across demand shock scenarios (-5% to -20%) "
+        "and evaluates capital structure solvency and **Net Debt / EBITDA** leverage covenants."
     )
 
     with st.container(border=True):
-        st.markdown("#### 📊 Parámetros de la Estructura Financiera")
+        st.markdown("#### 📊 Capital Structure Parameters")
         c1, c2, c3 = st.columns(3)
         with c1:
-            sim_revenue = st.number_input("Facturación Base (€):", min_value=100_000.0, value=8_000_000.0, step=250_000.0, format="%.2f")
-            sim_covenant = st.number_input("Límite Covenant DFN/EBITDA (x):", min_value=1.0, max_value=6.0, value=3.0, step=0.25)
+            sim_revenue = st.number_input("Base Revenue ($/€):", min_value=100_000.0, value=8_000_000.0, step=250_000.0, format="%.2f")
+            sim_covenant = st.number_input("Max Covenant Limit (Net Debt / EBITDA x):", min_value=1.0, max_value=6.0, value=3.0, step=0.25)
         with c2:
-            sim_ebitda = st.number_input("EBITDA Base (€):", min_value=10_000.0, value=1_600_000.0, step=50_000.0, format="%.2f")
-            sim_fixed_costs = st.slider("Estructura de Costes Fijos (%):", 0.10, 0.90, 0.60, 0.05)
+            sim_ebitda = st.number_input("Base EBITDA ($/€):", min_value=10_000.0, value=1_600_000.0, step=50_000.0, format="%.2f")
+            sim_fixed_costs = st.slider("Fixed Cost Structure (%):", 0.10, 0.90, 0.60, 0.05)
         with c3:
-            sim_net_debt = st.number_input("Deuda Financiera Neta (€):", value=3_200_000.0, step=100_000.0, format="%.2f")
-            sim_debt_service = st.number_input("Servicio Anual Deuda (€, 0=estimar 15%):", min_value=0.0, value=480_000.0, step=20_000.0, format="%.2f")
+            sim_net_debt = st.number_input("Net Debt ($/€):", value=3_200_000.0, step=100_000.0, format="%.2f")
+            sim_debt_service = st.number_input("Annual Debt Service ($/€, 0=estimate 15%):", min_value=0.0, value=480_000.0, step=20_000.0, format="%.2f")
 
-        run_sim_btn = st.button("📈 Ejecutar Simulación de Sensibilidad", use_container_width=True)
+        run_sim_btn = st.button("📈 Run Sensitivity Simulation", use_container_width=True)
 
     if run_sim_btn or "last_sim_result" in st.session_state:
         if run_sim_btn:
-            with st.spinner("Calculando sensibilidad LBO en backend..."):
+            with st.spinner("Computing LBO sensitivity matrix in backend..."):
                 try:
                     sim_res = api_client.simulate_leverage(
                         revenue=sim_revenue,
@@ -521,37 +520,37 @@ with tab2:
                     )
                     st.session_state["last_sim_result"] = sim_res
                 except Exception as sim_err:
-                    st.error(f"Error en simulación: {str(sim_err)}")
+                    st.error(f"Simulation error: {str(sim_err)}")
 
         if "last_sim_result" in st.session_state:
             sim_data = st.session_state["last_sim_result"]
             scenarios = sim_data.get("scenarios", [])
 
-            # Tabla de Escenarios
+            # Scenarios Table
             df_scenarios = pd.DataFrame(scenarios)
             df_scenarios.rename(columns={
-                "revenue_shock_pct": "Caída Ventas",
-                "simulated_revenue_k": "Ventas (k€)",
-                "simulated_ebitda_k": "EBITDA (k€)",
-                "simulated_cfads_k": "CFADS (k€)",
-                "simulated_ebitda_margin_pct": "Margen EBITDA %",
-                "simulated_leverage_ratio": "Ratio DFN/EBITDA",
-                "covenant_headroom_pct": "Holgura Covenant %",
+                "revenue_shock_pct": "Sales Drop",
+                "simulated_revenue_k": "Revenue (k)",
+                "simulated_ebitda_k": "EBITDA (k)",
+                "simulated_cfads_k": "CFADS (k)",
+                "simulated_ebitda_margin_pct": "EBITDA Margin %",
+                "simulated_leverage_ratio": "Net Debt / EBITDA Ratio",
+                "covenant_headroom_pct": "Covenant Headroom %",
                 "dscr_ratio": "DSCR CFADS (x)",
-                "covenant_breached": "Rotura Covenant"
+                "covenant_breached": "Covenant Status"
             }, inplace=True)
 
-            # Formateo de Rotura de Covenant
-            df_scenarios["Rotura Covenant"] = df_scenarios["Rotura Covenant"].apply(
-                lambda x: "🔴 INCUMPLIDO" if x else "🟢 Cumplido"
+            # Format Covenant Breached Status
+            df_scenarios["Covenant Status"] = df_scenarios["Covenant Status"].apply(
+                lambda x: "🔴 BREACHED" if x else "🟢 Compliant"
             )
 
-            st.markdown("### 📋 Resultados de la Matriz de Sensibilidad LBO")
+            st.markdown("### 📋 LBO Sensitivity Matrix Results")
             display_cols = [
-                "Caída Ventas", "Ventas (k€)", "EBITDA (k€)", "CFADS (k€)", "Margen EBITDA %",
-                "Ratio DFN/EBITDA", "Holgura Covenant %", "DSCR CFADS (x)", "Rotura Covenant"
+                "Sales Drop", "Revenue (k)", "EBITDA (k)", "CFADS (k)", "EBITDA Margin %",
+                "Net Debt / EBITDA Ratio", "Covenant Headroom %", "DSCR CFADS (x)", "Covenant Status"
             ]
-            # Filtrar solo columnas existentes
+            # Filter existing columns
             available_cols = [c for c in display_cols if c in df_scenarios.columns]
             st.dataframe(
                 df_scenarios[available_cols],
@@ -562,7 +561,7 @@ with tab2:
 
 # ── TAB 3: DUE DILIGENCE RAG COPILOT ─────────────────────────────────────────
 with tab3:
-    st.subheader("Copiloto de Due Diligence Financiera (Data Room RAG)")
+    st.subheader("Financial Due Diligence Copilot (Data Room RAG)")
     col_upload, col_chat = st.columns([1, 2])
 
     if "indexed_targets" not in st.session_state:
@@ -570,23 +569,23 @@ with tab3:
 
     with col_upload:
         with st.container(border=True):
-            st.markdown("### 📥 Ingesta de Documentos")
+            st.markdown("### 📥 Document Ingestion")
             
             upload_domain = st.text_input(
-                "Dominio Target Asociado:",
+                "Associated Target Domain:",
                 value=target_domain_filter if target_domain_filter else "logistics-veloz.com",
-                help="Dominio o identificador para aislar el Data Room de este target."
+                help="Domain or identifier used to isolate the Data Room for this target."
             )
             
             uploaded_file = st.file_uploader(
-                "Cargar Memorandum (CIM / Auditoría PDF):",
+                "Upload Memorandum (CIM / Audit PDF):",
                 type=["pdf"]
             )
 
-            if st.button("📤 Indexar en Qdrant Vector DB", use_container_width=True):
+            if st.button("📤 Index in Qdrant Vector DB", use_container_width=True):
                 if uploaded_file:
                     target_to_use = upload_domain.strip().lower() if upload_domain else "global"
-                    with st.spinner("Extrayendo balances estructurados y vectorizando..."):
+                    with st.spinner("Extracting structured balances and vectorizing..."):
                         try:
                             res = api_client.upload_document(
                                 company_domain=target_to_use,
@@ -596,56 +595,56 @@ with tab3:
                             if target_to_use not in st.session_state.indexed_targets:
                                 st.session_state.indexed_targets.append(target_to_use)
                             st.success(
-                                f"✅ Indexado: **{res['chunks_indexed']} chunks** ({res['total_pages']} págs) para `{target_to_use}`."
+                                f"✅ Indexed: **{res['chunks_indexed']} chunks** ({res['total_pages']} pages) for `{target_to_use}`."
                             )
                         except Exception as e:
-                            st.error(f"Error en carga: {str(e)}")
+                            st.error(f"Upload error: {str(e)}")
                 else:
-                    st.warning("Selecciona un archivo PDF para indexar.")
+                    st.warning("Please select a PDF file to index.")
 
             st.markdown("---")
-            if st.button("🗑️ Limpiar Historial de Chat", use_container_width=True):
+            if st.button("🗑️ Clear Chat History", use_container_width=True):
                 st.session_state.chat_history = []
                 st.rerun()
 
     with col_chat:
-        st.markdown("### 💬 Consultas Financieras y Contractuales")
+        st.markdown("### 💬 Financial & Contractual Due Diligence Inquiries")
 
         for msg in st.session_state.chat_history:
             with st.chat_message(msg["role"]):
                 st.markdown(msg["content"])
                 if "citations" in msg and msg["citations"]:
-                    with st.expander("📌 Ver Citas de Fuentes y Evidencias"):
+                    with st.expander("📌 View Source Citations & Evidence"):
                         for c in msg["citations"]:
                             st.markdown(
-                                f"<span class='citation-badge'>Pág. {c['page_number']} | Similitud: {c['score']}</span>",
+                                f"<span class='citation-badge'>Page {c['page_number']} | Similarity: {c['score']}</span>",
                                 unsafe_allow_html=True
                             )
                             st.caption(f"_{c['excerpt']}_")
 
-        user_query = st.chat_input("Pregunta sobre EBITDA normalizado, covenants bancarios o cláusulas Change of Control...")
+        user_query = st.chat_input("Ask about normalized EBITDA, bank covenants, or Change of Control clauses...")
         if user_query:
             st.session_state.chat_history.append({"role": "user", "content": user_query})
             with st.chat_message("user"):
                 st.write(user_query)
 
             with st.chat_message("assistant"):
-                with st.spinner("Consultando Vector DB y procesando respuesta auditable..."):
+                with st.spinner("Querying Vector DB and synthesizing auditable answer..."):
                     try:
                         active_query_domain = upload_domain.strip() if upload_domain else None
                         rag_res = api_client.query_rag(
                             query=user_query,
                             company_domain=active_query_domain
                         )
-                        answer = rag_res.get("answer", "Sin respuesta.")
+                        answer = rag_res.get("answer", "No response.")
                         citations = rag_res.get("citations", [])
 
                         st.write(answer)
                         if citations:
-                            with st.expander("📌 Ver Citas de Fuentes"):
+                            with st.expander("📌 View Source Citations"):
                                 for c in citations:
                                     st.markdown(
-                                        f"<span class='citation-badge'>Pág. {c['page_number']} | Similitud: {c['score']}</span>",
+                                        f"<span class='citation-badge'>Page {c['page_number']} | Similarity: {c['score']}</span>",
                                         unsafe_allow_html=True
                                     )
                                     st.caption(f"_{c['excerpt']}_")
@@ -656,17 +655,17 @@ with tab3:
                             "citations": citations
                         })
                     except Exception as e:
-                        st.error(f"Error en consulta RAG: {str(e)}")
+                        st.error(f"RAG query error: {str(e)}")
 
 
-# ── TAB 4: REPOSITORIO DINÁMICO DE TARGETS ───────────────────────────────────
+# ── TAB 4: TARGET REPOSITORY & DYNAMIC SCORING ────────────────────────────────
 with tab4:
-    st.subheader("Repositorio de Pymes y Scoring Dinámico")
+    st.subheader("Target SME Repository & Dynamic Scoring")
     
     try:
         companies_data = api_client.list_companies()
     except Exception as e:
-        st.error(f"Error consultando backend: {str(e)}")
+        st.error(f"Error querying backend: {str(e)}")
         companies_data = []
 
     if companies_data:
@@ -689,44 +688,44 @@ with tab4:
             ]) if s_links else "—"
 
             table_rows.append({
-                "Dominio": domain,
-                "Empresa": prof.get("company_name", domain),
-                "Score Dinámico": dyn_sc["total_score"],
+                "Domain": domain,
+                "Company": prof.get("company_name", domain),
+                "Dynamic Score": dyn_sc["total_score"],
                 "Tier": format_tier_badge(dyn_sc["tier"]),
-                "Modelo": format_business_model(prof.get("business_model", "N/A")),
-                "Escala": format_estimated_scale(prof.get("estimated_scale", "N/A")),
-                "Email Contacto": email_val,
-                "Redes": s_summary,
-                "Buy & Build": "🟢 Sí" if prof.get("investment_thesis", {}).get("buy_and_build_potential") else "⚪ No",
-                "Relevo Gen.": "🟢 Sí" if prof.get("is_family_owned_or_founder_led") else "⚪ No",
+                "Model": format_business_model(prof.get("business_model", "N/A")),
+                "Scale": format_estimated_scale(prof.get("estimated_scale", "N/A")),
+                "Contact Email": email_val,
+                "Digital Presence": s_summary,
+                "Buy & Build": "🟢 Yes" if prof.get("investment_thesis", {}).get("buy_and_build_potential") else "⚪ No",
+                "Succession": "🟢 Yes" if prof.get("is_family_owned_or_founder_led") else "⚪ No",
             })
 
         if table_rows:
             df_rep = pd.DataFrame(table_rows)
-            df_rep.sort_values(by="Score Dinámico", ascending=False, inplace=True)
+            df_rep.sort_values(by="Dynamic Score", ascending=False, inplace=True)
 
             st.dataframe(
                 df_rep,
                 use_container_width=True,
                 hide_index=True,
                 column_config={
-                    "Score Dinámico": st.column_config.ProgressColumn(
-                        "PE Score Dinámico",
-                        help="Puntuación normalizada de 0 a 100 según la tesis activa",
+                    "Dynamic Score": st.column_config.ProgressColumn(
+                        "Dynamic PE Score",
+                        help="Normalized score from 0 to 100 based on active investment mandate",
                         format="%.1f",
                         min_value=0,
                         max_value=100,
                     ),
-                    "Dominio": st.column_config.TextColumn("Dominio Web"),
-                    "Tier": st.column_config.TextColumn("Tier de Prioridad"),
-                    "Email Contacto": st.column_config.TextColumn("Email Outreach"),
-                    "Redes": st.column_config.TextColumn("Presencia Digital"),
+                    "Domain": st.column_config.TextColumn("Web Domain"),
+                    "Tier": st.column_config.TextColumn("Priority Tier"),
+                    "Contact Email": st.column_config.TextColumn("Outreach Email"),
+                    "Digital Presence": st.column_config.TextColumn("Digital Presence"),
                 }
             )
         else:
-            st.info("No hay empresas que cumplan los filtros activos.")
+            st.info("No companies match the active filters.")
     else:
-        st.info("No hay targets analizados aún en el repositorio.")
+        st.info("No targets analyzed in repository yet.")
 
 
 # ── TAB 5: BENCHMARKING & BUY-AND-BUILD ───────────────────────────────────────
