@@ -3,6 +3,8 @@ import os
 import pandas as pd
 import streamlit as st
 from typing import Optional, List, Dict, Any
+from app.models.scoring_schemas import InvestmentMandateConfig
+from app.services.scoring_service import DynamicPEScoringEngine
 
 
 def format_tier_badge(tier_raw: str) -> str:
@@ -17,13 +19,16 @@ def format_tier_badge(tier_raw: str) -> str:
 
 def render_benchmarking_matrix(
     companies: Optional[List[Dict[str, Any]]] = None,
-    processed_dir: str = "data/processed_json"
+    processed_dir: str = "data/processed_json",
+    mandate: Optional[InvestmentMandateConfig] = None,
+    selected_preset_name: Optional[str] = None,
 ):
-    """Renders the Side-by-Side Comparative Matrix for Buy-and-Build strategies."""
+    """Renders the Side-by-Side Comparative Matrix for Buy-and-Build strategies with dynamic scoring."""
     st.subheader("📊 Buy-and-Build Comparative Matrix (Roll-Up Cockpit)")
-    st.markdown(
-        "Select analyzed targets to benchmark operational metrics, digital maturity signals, and consolidation fit."
-    )
+    if selected_preset_name:
+        st.caption(f"📌 Dynamic PE Scores benchmarked for active mandate: **{selected_preset_name}**")
+    else:
+        st.caption("Benchmark operational metrics, digital maturity signals, and consolidation fit across targets.")
 
     available_targets: Dict[str, Dict[str, Any]] = {}
 
@@ -41,8 +46,8 @@ def render_benchmarking_matrix(
             with open(filepath, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 if data.get("status") == "SUCCESS":
-                    domain = data["domain"]
-                    name = data["profile"]["company_name"]
+                    domain = data.get("domain", "N/A")
+                    name = data.get("profile", {}).get("company_name", domain)
                     available_targets[f"{name} ({domain})"] = data
 
     if len(available_targets) < 2:
@@ -86,17 +91,28 @@ def render_benchmarking_matrix(
 
     for target in selected_data:
         prof = target.get("profile", {})
-        sc = target.get("scoring", {})
         ds = prof.get("digital_signals", {})
         thesis = prof.get("investment_thesis", {})
 
+        # Compute dynamic score with active mandate if provided, else fallback to cached scoring
+        if mandate:
+            dyn_sc = DynamicPEScoringEngine.calculate_from_mandate(prof, mandate)
+        else:
+            dyn_sc = target.get("scoring", {})
+
         col_header = f"🏢 {prof.get('company_name', 'N/A')}\n({target.get('domain', 'N/A')})"
-        tier_val = sc.get("tier", sc.get("target_tier", "N/A"))
+        tier_val = dyn_sc.get("tier", dyn_sc.get("target_tier", "N/A"))
+        total_score_val = dyn_sc.get("total_score", 0)
         bm_val = prof.get("business_model", "N/A").replace("_", " ").title()
         scale_val = prof.get("estimated_scale", "N/A").replace("_", " ").title()
 
+        if dyn_sc.get("knocked_out"):
+            score_str = f"{total_score_val:.1f} / 100 🚫 (Knockout)"
+        else:
+            score_str = f"{total_score_val:.1f} / 100"
+
         matrix_dict[col_header] = [
-            f"{sc.get('total_score', 0)} / 100",
+            score_str,
             format_tier_badge(tier_val),
             bm_val,
             scale_val,
@@ -136,9 +152,19 @@ def render_benchmarking_matrix(
 
     c1, c2, c3, c4 = st.columns(4)
 
-    avg_score = sum(t.get("scoring", {}).get("total_score", 0) for t in selected_data) / len(
-        selected_data
-    )
+    if mandate:
+        scores_list = [
+            DynamicPEScoringEngine.calculate_from_mandate(t.get("profile", {}), mandate).get("total_score", 0)
+            for t in selected_data
+        ]
+    else:
+        scores_list = [
+            t.get("scoring", {}).get("total_score", 0)
+            for t in selected_data
+        ]
+
+    avg_score = sum(scores_list) / len(scores_list) if scores_list else 0
+
     buy_build_count = sum(
         1
         for t in selected_data

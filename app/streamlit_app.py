@@ -770,4 +770,8 @@ with tab4:
 
 # ── TAB 5: BENCHMARKING & BUY-AND-BUILD ───────────────────────────────────────
 with tab5:
-    render_benchmarking_matrix(companies=companies_data)
+    render_benchmarking_matrix(
+        companies=companies_data,
+        mandate=active_mandate,
+        selected_preset_name=selected_preset_name,
+    )
