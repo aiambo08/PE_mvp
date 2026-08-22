@@ -29,15 +29,18 @@ from app.services.report_service import ICReportGenerator
 
 logger = logging.getLogger(__name__)
 
-# Directorio de resultados inicializado una sola vez (no en el hot path del endpoint)
-RESULTS_DIR = Path("data/processed_json")
+# Rutas absolutas independientes del CWD
+BASE_DIR = Path(__file__).resolve().parent.parent
+RESULTS_DIR = BASE_DIR / "data" / "processed_json"
+UPLOAD_PDFS_DIR = BASE_DIR / "data" / "uploaded_pdfs"
+QDRANT_DB_DIR = BASE_DIR / "data" / "qdrant_db"
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-    Path("data/uploaded_pdfs").mkdir(parents=True, exist_ok=True)
-    Path("data/qdrant_db").mkdir(parents=True, exist_ok=True)
+    UPLOAD_PDFS_DIR.mkdir(parents=True, exist_ok=True)
+    QDRANT_DB_DIR.mkdir(parents=True, exist_ok=True)
 
     app.state.scraper = CompanyWebScraper(headless=settings.SCRAPER_HEADLESS, timeout=settings.SCRAPER_TIMEOUT)
     app.state.extractor = CompanyExtractionService()
@@ -82,11 +85,10 @@ async def list_analyzed_companies():
     if RESULTS_DIR.exists():
         for file in RESULTS_DIR.glob("*.json"):
             try:
-                async with aiofiles.open(file, "r", encoding="utf-8") as f:
-                    content = await f.read()
-                    data = json.loads(content)
-                    if data.get("status") == "SUCCESS":
-                        results.append(data)
+                content = file.read_text(encoding="utf-8")
+                data = json.loads(content)
+                if data.get("status") == "SUCCESS":
+                    results.append(data)
             except Exception as e:
                 logger.warning("Error reading result file '%s': %r", file.name, e)
     return results
@@ -100,8 +102,7 @@ async def get_company_teaser_pdf(domain: str):
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="Target company not found.")
 
-    async with aiofiles.open(file_path, "r", encoding="utf-8") as f:
-        data = json.loads(await f.read())
+    data = json.loads(file_path.read_text(encoding="utf-8"))
 
     pdf_output_path = f"data/reports/{domain}_one_pager.pdf"
     
@@ -132,8 +133,7 @@ async def recalculate_scores(mandate: InvestmentMandateConfig) -> List[dict]:
     if RESULTS_DIR.exists():
         for file in RESULTS_DIR.glob("*.json"):
             try:
-                async with aiofiles.open(file, "r", encoding="utf-8") as f:
-                    content = await f.read()
+                content = file.read_text(encoding="utf-8")
                 data = json.loads(content)
                 if data.get("status") != "SUCCESS":
                     continue
@@ -181,6 +181,21 @@ async def simulate_leverage(req: StressSimulationRequest):
         raise HTTPException(status_code=400, detail=str(e))
 
 
+def _normalize_domain_string(url_or_domain: str) -> str:
+    """Normalizes URL or domain string into a clean lowercase domain key."""
+    raw = url_or_domain.strip().lower()
+    if "://" not in raw:
+        raw = f"https://{raw}"
+    from urllib.parse import urlparse
+    parsed = urlparse(raw)
+    domain = parsed.netloc or parsed.path
+    if ":" in domain:
+        domain = domain.split(":")[0]
+    if domain.startswith("www."):
+        domain = domain[4:]
+    return domain.strip("/")
+
+
 @app.post("/api/v1/analyze-company")
 async def analyze_company(request: AnalyzeCompanyRequest):
     scraper: CompanyWebScraper = app.state.scraper
@@ -188,10 +203,7 @@ async def analyze_company(request: AnalyzeCompanyRequest):
 
     try:
         # ── Cache check: return stored result if fresh ────────────────────
-        # Extracts domain from URL for cache key lookup
-        from urllib.parse import urlparse
-        _parsed = urlparse(request.url if "://" in request.url else f"https://{request.url}")
-        _cache_domain = _parsed.netloc or request.url
+        _cache_domain = _normalize_domain_string(request.url)
         _cache_path = RESULTS_DIR / f"{_cache_domain}.json"
 
         if not request.force_refresh and _cache_path.exists():
@@ -224,7 +236,9 @@ async def analyze_company(request: AnalyzeCompanyRequest):
             )
 
         # Async I/O — does not block asyncio event loop
-        file_path = RESULTS_DIR / f"{raw_data.company_domain}.json"
+        norm_domain = _normalize_domain_string(raw_data.company_domain)
+        analysis_result["domain"] = norm_domain
+        file_path = RESULTS_DIR / f"{norm_domain}.json"
         async with aiofiles.open(file_path, "w", encoding="utf-8") as f:
             await f.write(json.dumps(analysis_result, ensure_ascii=False, indent=2))
 

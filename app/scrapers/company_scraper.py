@@ -83,11 +83,18 @@ class CompanyWebScraper:
 
     def _normalize_url(self, raw: str) -> tuple[str, str]:
         """Normaliza un dominio o URL en (base_url, domain)."""
+        raw = raw.strip().lower()
         if "://" not in raw:
             raw = f"https://{raw}"
         parsed = urlparse(raw)
+        domain = parsed.netloc or parsed.path
+        if ":" in domain:
+            domain = domain.split(":")[0]
+        if domain.startswith("www."):
+            domain = domain[4:]
+        domain = domain.strip("/")
         base_url = f"{parsed.scheme}://{parsed.netloc}"
-        return base_url, parsed.netloc
+        return base_url, domain
 
     # ── Lógica síncrona de Playwright (se ejecuta en hilo separado) ───────────
 

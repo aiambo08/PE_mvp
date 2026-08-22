@@ -238,9 +238,15 @@ with st.sidebar:
 
     st.markdown("### ⚙️ Investment Thesis & Scoring")
 
-    # ── Preset Selector ───────────────────────────────────────────────────────
+    # ── Preset Selector (Persisted across page reloads via Query Params) ──────
     preset_names = list(THESIS_PRESETS.keys())
-    selected_preset_name = st.selectbox("Investment Preset:", options=preset_names, index=0)
+    url_preset = st.query_params.get("preset")
+    default_preset_idx = 0
+    if url_preset and url_preset in preset_names:
+        default_preset_idx = preset_names.index(url_preset)
+
+    selected_preset_name = st.selectbox("Investment Preset:", options=preset_names, index=default_preset_idx)
+    st.query_params["preset"] = selected_preset_name
     preset_data = THESIS_PRESETS[selected_preset_name]
     st.caption(f"_{preset_data['desc']}_")
 
@@ -367,120 +373,152 @@ with tab1:
     st.subheader("Automated Target SME Analysis")
     st.markdown("Enter a company domain or URL to trigger web scraping, structured LLM extraction, and dynamic **PE Target Score** computation.")
 
-    col_input, col_btn = st.columns([4, 1])
+    # Load stored targets from repository to enable instant loading without re-scraping
+    try:
+        stored_targets = api_client.list_companies()
+        target_map = {c.get("domain", ""): c for c in stored_targets if c.get("domain")}
+    except Exception:
+        stored_targets = []
+        target_map = {}
+
+    col_input, col_hist, col_btn = st.columns([3, 2, 1])
     with col_input:
         target_url = st.text_input(
-            "Company URL:",
+            "New Target URL or Domain:",
             placeholder="https://example-sme.com",
-            label_visibility="collapsed"
+            label_visibility="collapsed",
+            key="new_target_url_input"
+        )
+    with col_hist:
+        sorted_domains = sorted(list(target_map.keys()))
+        selected_from_repo = st.selectbox(
+            "Or inspect analyzed target:",
+            options=["📂 Quick Load Target from Repo..."] + sorted_domains,
+            label_visibility="collapsed",
+            key="quick_load_repo_selector"
         )
     with col_btn:
         analyze_btn = st.button("🚀 Analyze Target", use_container_width=True)
 
-    if analyze_btn and target_url:
+    # 1. Trigger from Repository Quick-Load
+    if selected_from_repo != "📂 Quick Load Target from Repo...":
+        st.session_state["active_company_analysis"] = target_map[selected_from_repo]
+        st.query_params["target"] = selected_from_repo
+    # 2. Trigger from Live Analysis / Cache
+    elif analyze_btn and target_url:
         with st.spinner("Scraping website, executing LLM extraction, and calculating dynamic scoring..."):
             try:
                 result = api_client.analyze_company(target_url)
                 if result.get("status") == "SUCCESS":
+                    st.session_state["active_company_analysis"] = result
+                    st.query_params["target"] = result.get("domain", "")
                     st.success(f"Analysis completed for {result['domain']}")
-
-                    profile = result["profile"]
-                    
-                    # Calculate dynamic score with active session mandate
-                    dyn_scoring = recalculate_dynamic_score(profile, active_mandate)
-
-                    # Executive Profile Card
-                    with st.container(border=True):
-                        st.markdown(f"### Executive Profile: **{profile.get('company_name', result['domain'])}**")
-                        st.markdown(f"*{profile.get('core_activity', 'No description available')}.*")
-                        st.markdown("---")
-
-                        m1, m2, m3, m4 = st.columns(4)
-                        m1.metric("PE Target Score", f"{dyn_scoring['total_score']} / 100")
-                        m2.metric("Priority Tier", format_tier_badge(dyn_scoring['tier']))
-                        m3.metric("Business Model", format_business_model(profile.get("business_model", "N/A")))
-                        m4.metric("Estimated Scale", format_estimated_scale(profile.get("estimated_scale", "N/A")))
-
-                        st.progress(dyn_scoring["total_score"] / 100.0, text=f"M&A Suitability: {dyn_scoring['total_score']}%")
-
-                    st.markdown(" ")
-
-                    # Side-by-Side Detail Sections
-                    col_left, col_right = st.columns(2)
-
-                    with col_left:
-                        with st.container(border=True):
-                            st.subheader("💡 Investment Thesis & Strengths")
-                            for strength in profile.get("investment_thesis", {}).get("key_strengths", []):
-                                st.markdown(f"• **Strength:** {strength}")
-                            st.markdown("---")
-                            st.markdown(f"**IC Summary:**\n{profile.get('investment_thesis', {}).get('reasoning_summary', 'N/A')}")
-
-                    with col_right:
-                        with st.container(border=True):
-                            st.subheader("⚠️ Operational Risks & Breakdown")
-                            for risk in profile.get("investment_thesis", {}).get("operational_risks", []):
-                                st.markdown(f"• **Risk:** {risk}")
-                            st.markdown("---")
-                            st.caption("Points per Pillar (Active Mandate Weighting):")
-                            breakdown = dyn_scoring.get("score_breakdown", {})
-                            if dyn_scoring.get("knocked_out"):
-                                st.error(f"🚫 Knockout: {dyn_scoring.get('knockout_reason', 'Active deal-breaker filter')}")
-                            elif breakdown:
-                                for label, pts in breakdown.items():
-                                    st.metric(label, f"{pts:.1f} pts")
-                            else:
-                                st.info("No active criteria to display.")
-
-                    # Contact & Direct Outreach Channels
-                    contact_email = result.get("contact_email")
-                    social_links = result.get("social_links", [])
-
-                    with st.container(border=True):
-                        st.markdown("#### 📬 Contact & Direct Outreach Channels")
-                        c_mail, c_social = st.columns(2)
-                        with c_mail:
-                            if contact_email:
-                                st.markdown(f"**📧 Contact Email:** [{contact_email}](mailto:{contact_email})")
-                            else:
-                                st.markdown("**📧 Contact Email:** *No email detected on website*")
-                        with c_social:
-                            if social_links:
-                                st.markdown("**🌐 Digital Presence:**")
-                                badges = []
-                                for s_link in social_links:
-                                    net_name = "LinkedIn" if "linkedin.com" in s_link else "Twitter/X" if any(x in s_link for x in ["twitter.com", "x.com"]) else "Instagram" if "instagram.com" in s_link else "Facebook" if "facebook.com" in s_link else "Web"
-                                    badges.append(f"[{net_name}]({s_link})")
-                                st.markdown(" • ".join(badges))
-                            else:
-                                st.markdown("**🌐 Digital Presence:** *No social profiles detected*")
-
-                    # Download Investment Teaser Button
-                    try:
-                        pdf_out_path = f"data/reports/{result['domain']}_one_pager.pdf"
-                        ICReportGenerator.generate_one_pager_pdf(
-                            domain=result['domain'],
-                            profile=profile,
-                            scoring=dyn_scoring,
-                            output_path=pdf_out_path,
-                            contact_email=contact_email,
-                            social_links=social_links,
-                        )
-                        if os.path.exists(pdf_out_path):
-                            with open(pdf_out_path, "rb") as pdf_file:
-                                st.download_button(
-                                    label="📄 Download Investment Teaser (PDF)",
-                                    data=pdf_file,
-                                    file_name=f"IC_Teaser_{result['domain']}.pdf",
-                                    mime="application/pdf",
-                                    use_container_width=True
-                                )
-                    except Exception as pdf_err:
-                        st.warning(f"PDF generation notice: {str(pdf_err)}")
                 else:
                     st.error(f"Analysis error: {result.get('error')}")
             except Exception as e:
                 st.error(f"Error connecting to API: {str(e)}")
+    # 3. Restore from query_params on page refresh (F5)
+    elif "active_company_analysis" not in st.session_state and "target" in st.query_params:
+        target_param = st.query_params["target"]
+        if target_param in target_map:
+            st.session_state["active_company_analysis"] = target_map[target_param]
+
+    # ── Render Active Target Card (Persisted across tab switches & reloads) ─────
+    if st.session_state.get("active_company_analysis"):
+        result = st.session_state["active_company_analysis"]
+        profile = result["profile"]
+
+        # Calculate dynamic score with active session mandate
+        dyn_scoring = recalculate_dynamic_score(profile, active_mandate)
+
+        # Executive Profile Card
+        with st.container(border=True):
+            st.markdown(f"### Executive Profile: **{profile.get('company_name', result['domain'])}**")
+            st.markdown(f"*{profile.get('core_activity', 'No description available')}.*")
+            st.markdown("---")
+
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("PE Target Score", f"{dyn_scoring['total_score']} / 100")
+            m2.metric("Priority Tier", format_tier_badge(dyn_scoring['tier']))
+            m3.metric("Business Model", format_business_model(profile.get("business_model", "N/A")))
+            m4.metric("Estimated Scale", format_estimated_scale(profile.get("estimated_scale", "N/A")))
+
+            st.progress(dyn_scoring["total_score"] / 100.0, text=f"M&A Suitability: {dyn_scoring['total_score']}%")
+
+        st.markdown(" ")
+
+        # Side-by-Side Detail Sections
+        col_left, col_right = st.columns(2)
+
+        with col_left:
+            with st.container(border=True):
+                st.subheader("💡 Investment Thesis & Strengths")
+                for strength in profile.get("investment_thesis", {}).get("key_strengths", []):
+                    st.markdown(f"• **Strength:** {strength}")
+                st.markdown("---")
+                st.markdown(f"**IC Summary:**\n{profile.get('investment_thesis', {}).get('reasoning_summary', 'N/A')}")
+
+        with col_right:
+            with st.container(border=True):
+                st.subheader("⚠️ Operational Risks & Breakdown")
+                for risk in profile.get("investment_thesis", {}).get("operational_risks", []):
+                    st.markdown(f"• **Risk:** {risk}")
+                st.markdown("---")
+                st.caption("Points per Pillar (Active Mandate Weighting):")
+                breakdown = dyn_scoring.get("score_breakdown", {})
+                if dyn_scoring.get("knocked_out"):
+                    st.error(f"🚫 Knockout: {dyn_scoring.get('knockout_reason', 'Active deal-breaker filter')}")
+                elif breakdown:
+                    for label, pts in breakdown.items():
+                        st.metric(label, f"{pts:.1f} pts")
+                else:
+                    st.info("No active criteria to display.")
+
+        # Contact & Direct Outreach Channels
+        contact_email = result.get("contact_email")
+        social_links = result.get("social_links", [])
+
+        with st.container(border=True):
+            st.markdown("#### 📬 Contact & Direct Outreach Channels")
+            c_mail, c_social = st.columns(2)
+            with c_mail:
+                if contact_email:
+                    st.markdown(f"**📧 Contact Email:** [{contact_email}](mailto:{contact_email})")
+                else:
+                    st.markdown("**📧 Contact Email:** *No email detected on website*")
+            with c_social:
+                if social_links:
+                    st.markdown("**🌐 Digital Presence:**")
+                    badges = []
+                    for s_link in social_links:
+                        net_name = "LinkedIn" if "linkedin.com" in s_link else "Twitter/X" if any(x in s_link for x in ["twitter.com", "x.com"]) else "Instagram" if "instagram.com" in s_link else "Facebook" if "facebook.com" in s_link else "Web"
+                        badges.append(f"[{net_name}]({s_link})")
+                    st.markdown(" • ".join(badges))
+                else:
+                    st.markdown("**🌐 Digital Presence:** *No social profiles detected*")
+
+        # Download Investment Teaser Button
+        try:
+            pdf_out_path = f"data/reports/{result['domain']}_one_pager.pdf"
+            ICReportGenerator.generate_one_pager_pdf(
+                domain=result['domain'],
+                profile=profile,
+                scoring=dyn_scoring,
+                output_path=pdf_out_path,
+                contact_email=contact_email,
+                social_links=social_links,
+            )
+            if os.path.exists(pdf_out_path):
+                with open(pdf_out_path, "rb") as pdf_file:
+                    st.download_button(
+                        label="📄 Download Investment Teaser (PDF)",
+                        data=pdf_file,
+                        file_name=f"IC_Teaser_{result['domain']}.pdf",
+                        mime="application/pdf",
+                        use_container_width=True
+                    )
+        except Exception as pdf_err:
+            st.warning(f"PDF generation notice: {str(pdf_err)}")
 
 
 # ── TAB 2: LBO SIMULATOR & COVENANT STRESS ──────────────────────────────────
@@ -667,6 +705,8 @@ with tab4:
     except Exception as e:
         st.error(f"Error querying backend: {str(e)}")
         companies_data = []
+
+    st.caption(f"📌 Dynamic PE Score calculated for active mandate: **{selected_preset_name}** | Repositories Analyzed: **{len(companies_data)} targets on disk**")
 
     if companies_data:
         table_rows = []
