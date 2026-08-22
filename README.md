@@ -105,6 +105,9 @@ flowchart TD
 
 The platform ingests target company websites via a Windows-safe asynchronous `Playwright` crawler, extracting main navigation paths, value propositions, client portals, regulatory certifications, recurring revenue signals, and contact emails.
 
+* **URL & Domain Cache Normalization:** All requests undergo canonical domain normalization (stripping protocols, `www.`, ports, paths, and trailing slashes). Stored targets respond via zero-cost disk cache in **< 10 ms**.
+* **Repository Quick-Load & State Persistence:** The Deal Sourcing cockpit features a 1-click repository selector to inspect analyzed targets without re-crawling. Active mandates and selected targets are synchronized via `st.query_params` (`?preset=...&target=...`), ensuring total resilience across browser reloads (F5).
+
 The raw content is parsed by `Instructor` into strict `Pydantic v2` models (`StructuredCompanyProfile`) and evaluated by the **Dynamic PE Scoring Engine** through a 4-step institutional process:
 
 1. **Knockout Deal-Breakers:** Pre-screening filters (e.g., Mandatory B2B model, Minimum Headcount cutoff) that instantly assign `🔴 Tier 3 (Discard)` with `0.0 pts` to unqualified targets.
@@ -148,8 +151,10 @@ Standard RAG pipelines break financial statements because traditional chunkers s
 This platform implements a specialized ingestion and retrieval architecture:
 * **Table-Preserving Extraction:** `pdfplumber` isolates tabular coordinates and converts financial statements into clean Markdown pipes.
 * **Sentence-Window Retrieval:** `LlamaIndex`'s `SentenceWindowNodeParser` indexes focused sentence units while retaining a $\pm 5$ sentence context window for query-time synthesis.
+* **Idempotent Ingestion & Deterministic Point IDs:** Direct `qdrant_client.upsert()` with pre-ingestion deletion by `(company_domain, filename)` and deterministic UUID5 point hashing, preventing duplicate vector accumulation upon re-uploading documents.
+* **Candidate Pool Expansion & Semantic Deduplication:** Retrieves an expanded candidate pool ($\text{candidate\_limit} = \max(\text{top\_k} \times 3, 12)$) with text-fingerprint deduplication, ensuring complete coverage across multi-topic queries (e.g., EBITDA add-backs + Customer Concentration + Change of Control).
 * **Data Room Isolation:** Every query strictly enforces `company_domain` payload filtering in Qdrant, preventing cross-target data leaks between confidential M&A memorandums.
-* **Strict Anti-Hallucination System Prompt:** Enforces strict provenance rules—if a figure is not explicitly recorded, the engine outputs *"INFORMACIÓN INSUFICIENTE EN LOS DOCUMENTOS ANALIZADOS"*, completely forbidding speculative calculations.
+* **Strict Anti-Hallucination System Prompt:** Enforces strict provenance rules—if a figure is not explicitly recorded, the engine outputs *"INSUFFICIENT INFORMATION IN THE ANALYZED DOCUMENTS"*, completely forbidding speculative calculations.
 * **Granular Source Attribution:** Every response provides the exact filename, page number, semantic similarity score, and verbatim excerpt.
 
 ---
@@ -157,8 +162,8 @@ This platform implements a specialized ingestion and retrieval architecture:
 ### 4. Buy-and-Build (Roll-Up) Benchmarking Matrix
 
 A comparative side-by-side cockpit allowing investment directors to benchmark 2 to 5 targets simultaneously:
-* Dynamic comparison across all evaluation criteria, digital maturity signals, and key operational risks.
-* Aggregate group synergy analytics: Average PE Score, Roll-up Eligibility count, Generational Transition count, and Digital Gap opportunities.
+* **Live Mandate Recalculation:** All comparative rows (PE Target Score, Priority Tier) and aggregate group synergy cards dynamically recalculate in real time against the active sidebar investment thesis.
+* **Aggregate Group Synergy Analytics:** Live Average PE Score, Roll-up Eligibility count, Generational Transition count, and Digital Gap opportunities.
 
 ---
 
@@ -376,9 +381,11 @@ The architecture is tuned for consumer GPUs (8 GB VRAM) using strict memory boun
 - [x] **Phase 3:** Table-preserving Financial RAG with Sentence Window expansion & citations.
 - [x] **Phase 4:** Terminal Noir Deal Cockpit, LBO Stress Simulator & Buy-and-Build Matrix.
 - [x] **Phase 5:** Modular Criteria Catalog, Knockout Deal-Breakers & CFADS/DSCR Hardening.
-- [ ] **Phase 6 (Next):** Automated EBITDA Quality of Earnings (QoE) add-back bridges extracted directly from PDF footnotes.
-- [ ] **Phase 7:** Multi-tenant workspace isolation with role-based access control (RBAC).
-- [ ] **Phase 8:** Automated connector integrations with S&P Capital IQ and PitchBook API feeds.
+- [x] **Phase 6:** Idempotent RAG Ingestion, Candidate Pool Expansion & Sub-10ms Domain Cache Normalization.
+- [x] **Phase 7:** Live Mandate-Driven Dynamic Scoring in Benchmarking Matrix & URL Query State Synchronization.
+- [ ] **Phase 8 (Next):** Automated EBITDA Quality of Earnings (QoE) add-back bridges extracted directly from PDF footnotes.
+- [ ] **Phase 9:** Multi-tenant workspace isolation with role-based access control (RBAC).
+- [ ] **Phase 10:** Automated connector integrations with S&P Capital IQ and PitchBook API feeds.
 
 ---
 
