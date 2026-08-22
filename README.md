@@ -13,6 +13,12 @@
 
 ---
 
+<p align="center">
+  <video src="https://github.com/user-attachments/assets/50689d2e-b527-49eb-a5dd-31ea536961a0" width="100%" autoplay loop muted playsinline controls></video>
+</p>
+
+---
+
 ## 📑 Table of Contents
 
 1. [Executive Overview & Value Proposition](#-executive-overview--value-proposition)
